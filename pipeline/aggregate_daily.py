@@ -7,7 +7,7 @@ from db.supabase import supabase
 
 def get_day_window():
     """
-    Retorna o intervalo das últimas 24h,
+    Retorna intervalo das últimas 24h (UTC),
     compatível com timestamp without time zone.
     """
     end = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
@@ -26,9 +26,7 @@ def main():
 
     metrics = (
         supabase.table("time_bucket_metrics")
-        .select(
-            "club_id, source_id, volume_normalized, sentiment_score"
-        )
+        .select("club_id, volume_raw, volume_normalized, sentiment_score")
         .gte("bucket_start", start_str)
         .lt("bucket_start", end_str)
         .execute()
@@ -39,46 +37,46 @@ def main():
         print("Nenhum dado encontrado para agregação")
         return
 
-    # Agrupar manualmente (MVP simples)
     grouped = {}
 
     for m in metrics:
-        key = (m["club_id"], m["source_id"])
-        grouped.setdefault(key, {
-            "club_id": m["club_id"],
-            "source_id": m["source_id"],
-            "volumes": [],
+        club_id = m["club_id"]
+
+        grouped.setdefault(club_id, {
+            "club_id": club_id,
+            "volume_raw": [],
+            "volume_normalized": [],
             "sentiments": []
         })
 
+        if m["volume_raw"] is not None:
+            grouped[club_id]["volume_raw"].append(m["volume_raw"])
+
         if m["volume_normalized"] is not None:
-            grouped[key]["volumes"].append(m["volume_normalized"])
+            grouped[club_id]["volume_normalized"].append(m["volume_normalized"])
 
         if m["sentiment_score"] is not None:
-            grouped[key]["sentiments"].append(m["sentiment_score"])
+            grouped[club_id]["sentiments"].append(m["sentiment_score"])
 
     inserts = []
 
     for g in grouped.values():
-        if not g["volumes"]:
+        if not g["volume_raw"]:
             continue
 
         inserts.append({
             "club_id": g["club_id"],
-            "source_id": g["source_id"],
-            "day": str(day),
-            "volume_avg": round(sum(g["volumes"]) / len(g["volumes"]), 2),
-            "volume_max": max(g["volumes"]),
-            "sentiment_avg": round(
+            "aggregation_date": str(day),
+            "volume_total": sum(g["volume_raw"]),
+            "volume_normalized": round(
+                sum(g["volume_normalized"]) / len(g["volume_normalized"]), 2
+            ) if g["volume_normalized"] else None,
+            "sentiment_score": round(
                 sum(g["sentiments"]) / len(g["sentiments"]), 2
             ) if g["sentiments"] else None,
-            "buckets_count": len(g["volumes"]),
+            "calculated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
             "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         })
-
-    if not inserts:
-        print("Nada para inserir após agregação")
-        return
 
     response = (
         supabase.table("daily_aggregations")
