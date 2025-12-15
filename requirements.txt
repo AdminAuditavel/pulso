@@ -1,3 +1,4 @@
 praw
 pandas
 python-dotenv
+requests
