@@ -84,7 +84,7 @@ def main():
         .execute()
     )
 
-    print(f"Inseridos {len(response.data)} registros em daily_aggregations")
+    print(f"Inseridos {len(response.data)} registros em daily_aggregations_v2")
 
 
 if __name__ == "__main__":
