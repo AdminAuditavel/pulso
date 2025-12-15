@@ -1,4 +1,6 @@
-from datetime import datetime, timedelta, timezone
+# pulso-esportivo/pipeline/normalize_hourly.py
+
+from datetime import datetime, timedelta
 
 from db.supabase import supabase
 
@@ -6,14 +8,17 @@ from db.supabase import supabase
 def get_bucket_start():
     """
     Retorna o início da hora anterior (UTC),
-    SEM timezone (compatível com Postgres).
+    SEM timezone (compatível com Postgres timestamp without time zone).
     """
     now = datetime.utcnow()
     return now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
 
+
 def main():
     bucket_start = get_bucket_start()
-    print(f"Normalizando bucket: {bucket_start.isoformat()}")
+    bucket_str = bucket_start.strftime("%Y-%m-%d %H:%M:%S")
+
+    print(f"Normalizando bucket: {bucket_str}")
 
     # Buscar todas as fontes ativas
     sources = (
@@ -24,18 +29,21 @@ def main():
         .data
     )
 
+    if not sources:
+        raise RuntimeError("Nenhuma fonte ativa encontrada")
+
     for source in sources:
         metrics = (
             supabase.table("time_bucket_metrics")
             .select("id, volume_raw")
             .eq("source_id", source["id"])
-            .eq("bucket_start", bucket_start)
+            .eq("bucket_start", bucket_str)
             .execute()
             .data
         )
 
         if not metrics:
-            print(f"Fonte {source['code']}: sem dados")
+            print(f"Fonte {source['code']}: sem dados para o bucket")
             continue
 
         max_volume = max(m["volume_raw"] for m in metrics) or 1
@@ -55,7 +63,7 @@ def main():
                 .execute()
             )
 
-    print("Normalização concluída")
+    print("Normalização concluída com sucesso")
 
 
 if __name__ == "__main__":
