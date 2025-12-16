@@ -1,0 +1,30 @@
+name: Daily Aggregation
+
+on:
+  schedule:
+    - cron: "10 1 * * *"   # roda 01:10 UTC
+  workflow_dispatch:
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run daily aggregation
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python -m pipeline.aggregate_daily
