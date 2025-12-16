@@ -26,3 +26,57 @@ async def get_daily_ranking():
         return {"data": response.data}
     except Exception as e:
         return {"error": str(e)}
+
+# Endpoint para pegar dados da tabela clubs
+@app.get("/clubs")
+async def get_clubs():
+    try:
+        response = supabase.table("clubs").select("*").execute()
+        return {"data": response.data}
+    except Exception as e:
+        return {"error": str(e)}
+
+# Endpoint para pegar dados da tabela daily_iap
+@app.get("/daily_iap")
+async def get_daily_iap():
+    try:
+        response = supabase.table("daily_iap").select("*").execute()
+        return {"data": response.data}
+    except Exception as e:
+        return {"error": str(e)}
+
+# Endpoint para pegar dados da tabela daily_iap_ranking
+@app.get("/daily_iap_ranking")
+async def get_daily_iap_ranking():
+    try:
+        response = supabase.table("daily_iap_ranking").select("*").execute()
+        return {"data": response.data}
+    except Exception as e:
+        return {"error": str(e)}
+
+# Endpoint para pegar dados da tabela sources
+@app.get("/sources")
+async def get_sources():
+    try:
+        response = supabase.table("sources").select("*").execute()
+        return {"data": response.data}
+    except Exception as e:
+        return {"error": str(e)}
+
+# Endpoint para pegar dados da tabela daily_aggregations_v2 (corrigido)
+@app.get("/daily_aggregations_v2")
+async def get_daily_aggregations_v2():
+    try:
+        response = supabase.table("daily_aggregations_v2").select("*").execute()
+        return {"data": response.data}
+    except Exception as e:
+        return {"error": str(e)}
+
+# Endpoint para pegar dados da tabela time_bucket_metrics
+@app.get("/time_bucket_metrics")
+async def get_time_bucket_metrics():
+    try:
+        response = supabase.table("time_bucket_metrics").select("*").execute()
+        return {"data": response.data}
+    except Exception as e:
+        return {"error": str(e)}
