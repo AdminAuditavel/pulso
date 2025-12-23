@@ -35,21 +35,20 @@ export default function Home() {
     // Função para buscar dados do ranking diário
     const fetchData = async () => {
       try {
-        // Buscar dados do ranking diário
-        const rankingResponse = await axios.get('https://pulso-publico.vercel.app/daily_ranking');
-        setRankingData(rankingResponse.data.data);
+        // Usar rotas relativas para a API (serão /api/daily_ranking, /api/clubs, /api/sources)
+        const rankingResponse = await axios.get('/api/daily_ranking');
+        setRankingData(rankingResponse.data.data || []);
 
-        // Buscar dados dos clubes
-        const clubsResponse = await axios.get('https://pulso-publico.vercel.app/clubs');
-        setClubData(clubsResponse.data.data);
+        const clubsResponse = await axios.get('/api/clubs');
+        setClubData(clubsResponse.data.data || []);
 
-        // Buscar fontes de dados
-        const sourcesResponse = await axios.get('https://pulso-publico.vercel.app/sources');
-        setSourceData(sourcesResponse.data.data);
+        const sourcesResponse = await axios.get('/api/sources');
+        setSourceData(sourcesResponse.data.data || []);
 
         setLoading(false);
       } catch (error) {
         console.error('Erro ao buscar dados:', error);
+        setLoading(false);
       }
     };
 
