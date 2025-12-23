@@ -1,3 +1,21 @@
+REGISTRO DE DESENVOLVIMENTO
+
+Data: 2025-12-23
+Status atual: Documentação de produto + MVP definida (visão, fontes, metodologia IAP, stack e plano 14 dias).
+Decisões consolidadas:
+
+Dados públicos apenas; sem comentários individuais; transparência metodológica.
+
+MVP = ranking Top 5/10 “Times mais comentados hoje”, janela 24h, Reddit/YouTube/Trends.
+Pendências abertas (alto nível):
+
+Definir lista inicial de times (e sinônimos/aliases).
+
+Definir estratégia de matching (time/termos) para contagem de menções.
+
+Implementar pipeline: coleta → agregação → normalização → IAP → persistência → API → frontend.
+
+
 # Visão do Produto – Plataforma Pública de Tendências Esportivas
 
 ## 1. Visão Geral
