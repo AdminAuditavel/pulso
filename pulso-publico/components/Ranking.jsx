@@ -26,7 +26,7 @@ function getClubName(item) {
     if (typeof item.club === 'string') return item.club;
     try {
       return JSON.stringify(item.club);
-    } catch (e) {
+    } catch {
       // ignore
     }
   }
@@ -45,6 +45,7 @@ export default function Ranking() {
   const [error, setError] = useState(null);
 
   const [selectedDate, setSelectedDate] = useState(''); // YYYY-MM-DD
+  const [selectedClub, setSelectedClub] = useState(''); // nome do clube
 
   const fetchData = async (date) => {
     setLoading(true);
@@ -63,34 +64,45 @@ export default function Ranking() {
   };
 
   useEffect(() => {
-    fetchData(''); // carrega "último"/padrão
+    fetchData('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const rows = useMemo(() => {
+  // Lista de clubes para o dropdown (a partir dos dados carregados)
+  const clubOptions = useMemo(() => {
+    if (!Array.isArray(data)) return [];
+    const names = data.map(getClubName).filter((n) => n && n !== '—');
+    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
+  }, [data]);
+
+  // Base rows (com valor numérico) — ainda sem filtro por clube
+  const baseRows = useMemo(() => {
     if (!Array.isArray(data)) return [];
     return data
       .map((item) => {
         const raw = item?.score ?? item?.iap;
         const value = toNumber(raw);
+        const club = getClubName(item);
         return {
-          key: item?.club_id ?? `${getClubName(item)}-${Math.random()}`,
-          club: getClubName(item),
+          key: item?.club_id ?? `${club}-${Math.random()}`,
+          club,
           value,
+          rawItem: item,
         };
       })
       .filter((r) => r.value !== null);
   }, [data]);
 
+  // Aplica filtro por clube (afeta tabela e gráfico)
+  const rows = useMemo(() => {
+    if (!selectedClub) return baseRows;
+    return baseRows.filter((r) => r.club === selectedClub);
+  }, [baseRows, selectedClub]);
+
   const chartData = useMemo(() => {
     return {
       labels: rows.map((r) => r.club),
-      datasets: [
-        {
-          label: 'IAP',
-          data: rows.map((r) => r.value),
-        },
-      ],
+      datasets: [{ label: 'IAP', data: rows.map((r) => r.value) }],
     };
   }, [rows]);
 
@@ -102,9 +114,7 @@ export default function Ranking() {
         legend: { display: false },
         tooltip: { enabled: true },
       },
-      scales: {
-        y: { beginAtZero: true },
-      },
+      scales: { y: { beginAtZero: true } },
     };
   }, []);
 
@@ -128,19 +138,26 @@ export default function Ranking() {
 
       <div style={{ fontSize: 13, opacity: 0.85 }}>
         Exibindo: <strong>{selectedDate || 'último dia disponível'}</strong>
+        {selectedClub ? (
+          <>
+            {' '}
+            | Clube: <strong>{selectedClub}</strong>
+          </>
+        ) : null}
       </div>
 
-      {/* FILTRO DE DATA (AUTO-APLICA) */}
+      {/* FILTROS */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        {/* Data (auto-aplica) */}
         <label style={{ fontSize: 14 }}>Data:</label>
-
         <input
           type="date"
           value={selectedDate}
           onChange={(e) => {
             const d = e.target.value;
             setSelectedDate(d);
-            fetchData(d); // auto-aplica
+            // ao trocar de data, mantém o clube selecionado (você pode mudar isso depois)
+            fetchData(d);
           }}
         />
 
@@ -153,6 +170,29 @@ export default function Ranking() {
           title="Voltar para o padrão (último dia disponível)"
         >
           Hoje/Último
+        </button>
+
+        {/* Clube (filtra localmente) */}
+        <label style={{ fontSize: 14, marginLeft: 8 }}>Clube:</label>
+        <select
+          value={selectedClub}
+          onChange={(e) => setSelectedClub(e.target.value)}
+          style={{ padding: 4 }}
+        >
+          <option value="">Todos</option>
+          {clubOptions.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+
+        <button
+          onClick={() => setSelectedClub('')}
+          disabled={!selectedClub}
+          title="Limpar filtro de clube"
+        >
+          Limpar clube
         </button>
       </div>
 
@@ -171,7 +211,7 @@ export default function Ranking() {
           </tr>
         </thead>
         <tbody>
-          {data.map((item, idx) => (
+          {(selectedClub ? rows.map((r) => r.rawItem) : data).map((item, idx) => (
             <tr key={item.club_id ?? idx}>
               <td style={{ padding: 8 }}>{idx + 1}</td>
               <td style={{ padding: 8 }}>{getClubName(item)}</td>
@@ -183,7 +223,7 @@ export default function Ranking() {
 
       {rows.length === 0 ? (
         <div style={{ fontSize: 12, opacity: 0.8 }}>
-          Observação: nenhuma linha tinha valor numérico em <code>score</code> ou <code>iap</code>.
+          Observação: nenhuma linha tinha valor numérico em <code>score</code> ou <code>iap</code> para o filtro atual.
         </div>
       ) : null}
     </div>
