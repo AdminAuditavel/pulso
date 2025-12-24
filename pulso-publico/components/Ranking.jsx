@@ -19,6 +19,7 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineEleme
 
 function getClubName(item) {
   if (!item) return '—';
+  // prioridade: club.name -> club_name -> name -> club string -> club_id truncado
   if (item.club && typeof item.club === 'object' && (item.club.name || item.club.club_name)) {
     return item.club.name ?? item.club.club_name;
   }
@@ -54,7 +55,9 @@ function normalizeSeries(series) {
 }
 
 export default function Ranking() {
-  // Ranking diário (tabela + gráfico de barras)
+  /* ============================
+     Ranking diário (tabela + bar)
+  ============================ */
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -123,20 +126,25 @@ export default function Ranking() {
   }, []);
 
   const tableItems = useMemo(() => {
-    return selectedClub ? rows.map((r) => r.rawItem) : (Array.isArray(data) ? data : []);
+    return selectedClub ? rows.map((r) => r.rawItem) : Array.isArray(data) ? data : [];
   }, [selectedClub, rows, data]);
 
-  // ============================
-  // Comparação multi-clubes (linha)
-  // ============================
+  /* ============================
+     Comparação multi-clubes (linha)
+  ============================ */
   const [clubs, setClubs] = useState([]);
   const [clubsLoading, setClubsLoading] = useState(true);
 
-  // nomes selecionados (até 5)
+  // nomes/labels selecionados (até 5 normalmente; no modo A+B pode chegar a 10)
   const [compareSelected, setCompareSelected] = useState([]);
-  const [compareMap, setCompareMap] = useState({}); // { [clubName]: series[] }
+  const [compareMap, setCompareMap] = useState({}); // { [label]: normalizedSeries[] }
   const [compareBusy, setCompareBusy] = useState(false);
   const [compareError, setCompareError] = useState(null);
+
+  // Top 5 vs Top 5 (Data B)
+  const [compareDateB, setCompareDateB] = useState(''); // YYYY-MM-DD
+  const [top5BLoading, setTop5BLoading] = useState(false);
+  const [top5BError, setTop5BError] = useState(null);
 
   const fetchClubs = async () => {
     setClubsLoading(true);
@@ -156,20 +164,37 @@ export default function Ranking() {
     fetchClubs();
   }, []);
 
-  const toggleCompare = async (clubName) => {
+  async function fetchTopNByDate(date, n = 5) {
+    const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+    const res = await fetch(`/api/daily_ranking${qs}`);
+    if (!res.ok) throw new Error(`Falha ao buscar ranking do dia (${res.status})`);
+    const json = await res.json();
+    const arr = Array.isArray(json) ? json : [];
+    return arr
+      .map((it) => getClubName(it))
+      .filter((name) => name && name !== '—')
+      .slice(0, n);
+  }
+
+  const toggleCompare = (clubName) => {
     setCompareError(null);
+    setTop5BError(null);
 
     setCompareSelected((prev) => {
       const exists = prev.includes(clubName);
       if (exists) return prev.filter((x) => x !== clubName);
-      if (prev.length >= 5) return prev; // trava em 5
+
+      // Limite: se já estiver em modo A+B (10), não adiciona mais; se não, limita a 5
+      const max = prev.some((x) => /\((A|B)\)\s*$/.test(String(x))) ? 10 : 5;
+      if (prev.length >= max) return prev;
+
       return [...prev, clubName];
     });
   };
 
-  // sempre que compareSelected muda, garantimos que as séries estejam carregadas
+  // Carrega séries faltantes conforme compareSelected
   useEffect(() => {
-    const need = compareSelected.filter((name) => !compareMap[name]);
+    const need = compareSelected.filter((label) => !compareMap[label]);
     if (need.length === 0) return;
 
     let cancelled = false;
@@ -178,15 +203,15 @@ export default function Ranking() {
       setCompareBusy(true);
       try {
         const updates = {};
-        for (const name of need) {
-          const res = await fetch(`/api/club_series?club=${encodeURIComponent(name)}&limit_days=180`);
-          if (!res.ok) throw new Error(`Falha ao buscar série: ${name}`);
+        for (const label of need) {
+          // Suporta rótulos do modo A/B: "Cruzeiro (A)" -> "Cruzeiro"
+          const realName = String(label).replace(/\s*\((A|B)\)\s*$/, '');
+          const res = await fetch(`/api/club_series?club=${encodeURIComponent(realName)}&limit_days=180`);
+          if (!res.ok) throw new Error(`Falha ao buscar série: ${label}`);
           const json = await res.json();
-          updates[name] = normalizeSeries(json);
+          updates[label] = normalizeSeries(json);
         }
-        if (!cancelled) {
-          setCompareMap((prev) => ({ ...prev, ...updates }));
-        }
+        if (!cancelled) setCompareMap((prev) => ({ ...prev, ...updates }));
       } catch (e) {
         if (!cancelled) setCompareError(e);
       } finally {
@@ -201,7 +226,7 @@ export default function Ranking() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compareSelected]);
 
-  // Remove séries do mapa quando desmarca (para manter leve)
+  // Remove séries do mapa quando desmarca (mantém leve)
   useEffect(() => {
     const setSel = new Set(compareSelected);
     const keys = Object.keys(compareMap);
@@ -216,22 +241,22 @@ export default function Ranking() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compareSelected]);
 
-  // Alinhar datas (união das datas de todos os clubes selecionados)
+  // Alinhar datas (união de datas de todos labels selecionados)
   const compareAligned = useMemo(() => {
-    const selected = compareSelected.filter((n) => compareMap[n]);
+    const selected = compareSelected.filter((label) => compareMap[label]);
     if (selected.length === 0) return { labels: [], datasets: [] };
 
     const dateSet = new Set();
-    selected.forEach((name) => {
-      compareMap[name].forEach((r) => dateSet.add(r.date));
+    selected.forEach((label) => {
+      compareMap[label].forEach((r) => dateSet.add(r.date));
     });
 
     const labels = Array.from(dateSet).sort((a, b) => String(a).localeCompare(String(b)));
 
-    const datasets = selected.map((name) => {
-      const map = new Map(compareMap[name].map((r) => [r.date, r.value]));
+    const datasets = selected.map((label) => {
+      const map = new Map(compareMap[label].map((r) => [r.date, r.value]));
       return {
-        label: name,
+        label,
         data: labels.map((d) => (map.has(d) ? map.get(d) : null)),
       };
     });
@@ -250,16 +275,15 @@ export default function Ranking() {
   }, []);
 
   const clubsForCompareUI = useMemo(() => {
-    // usa label (name_short) que você já está usando como parâmetro em /api/club_series
     return (Array.isArray(clubs) ? clubs : [])
       .map((c) => c.label)
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b));
   }, [clubs]);
 
-  // ============================
-  // Render
-  // ============================
+  /* ============================
+     Render - estados de erro
+  ============================ */
   if (loading) return <div>Carregando ranking…</div>;
 
   if (error)
@@ -367,10 +391,71 @@ export default function Ranking() {
           COMPARAÇÃO MULTI-CLUBES
          ============================ */}
       <div style={{ border: '1px solid #ddd', borderRadius: 12, padding: 12, display: 'grid', gap: 10 }}>
-        <div style={{ fontSize: 14, fontWeight: 700 }}>Comparar clubes (até 5) — evolução do IAP</div>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>Comparar clubes — evolução do IAP</div>
+
+        {/* TOP 5 vs TOP 5 (A vs B) */}
+        <div style={{ display: 'grid', gap: 8 }}>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>
+            Top 5 vs Top 5: compara o Top 5 do ranking exibido (Data A) com o Top 5 de uma segunda data (Data B).
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 12 }}>
+              Data A: <strong>{selectedDate || 'último dia'}</strong>
+            </div>
+
+            <label style={{ fontSize: 12 }}>Data B:</label>
+            <input
+              type="date"
+              value={compareDateB}
+              onChange={(e) => {
+                setCompareDateB(e.target.value);
+                setTop5BError(null);
+              }}
+            />
+
+            <button
+              onClick={async () => {
+                setTop5BError(null);
+                setTop5BLoading(true);
+                try {
+                  if (!compareDateB) throw new Error('Selecione a Data B.');
+
+                  // Top 5 da tabela atual (Data A)
+                  const topA = (Array.isArray(tableItems) ? tableItems : [])
+                    .map((it) => getClubName(it))
+                    .filter((n) => n && n !== '—')
+                    .slice(0, 5);
+
+                  // Top 5 da Data B
+                  const topB = await fetchTopNByDate(compareDateB, 5);
+
+                  // Rotula A/B para não conflitar (ex.: "Cruzeiro (A)" e "Cruzeiro (B)")
+                  const merged = [...topA.map((n) => `${n} (A)`), ...topB.map((n) => `${n} (B)`)];
+
+                  setCompareError(null);
+                  setCompareMap({}); // força recarga limpa
+                  setCompareSelected(merged);
+                } catch (e) {
+                  setTop5BError(e);
+                } finally {
+                  setTop5BLoading(false);
+                }
+              }}
+              disabled={top5BLoading}
+              title="Carrega Top 5 da Data A (tabela atual) + Top 5 da Data B e sobrepõe no gráfico"
+            >
+              Carregar Top 5 A + B
+            </button>
+
+            {top5BLoading ? <span style={{ fontSize: 12, opacity: 0.75 }}>Carregando…</span> : null}
+          </div>
+
+          {top5BError ? <div style={{ fontSize: 12 }}>Erro: {top5BError.message}</div> : null}
+        </div>
 
         <div style={{ fontSize: 12, opacity: 0.8 }}>
-          Selecione até 5 clubes para sobrepor as linhas no mesmo gráfico (usa o histórico do <code>daily_iap_ranking</code> via <code>/api/club_series</code>).
+          Modo manual: selecione até 5 clubes para sobrepor as linhas no mesmo gráfico.
         </div>
 
         {clubsLoading ? (
@@ -379,15 +464,16 @@ export default function Ranking() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
             {clubsForCompareUI.map((name) => {
               const checked = compareSelected.includes(name);
-              const disabled = !checked && compareSelected.length >= 5;
+              const isABMode = compareSelected.some((x) => /\((A|B)\)\s*$/.test(String(x)));
+              const max = isABMode ? 10 : 5;
+              const disabled = !checked && compareSelected.length >= max;
+
               return (
-                <label key={name} style={{ display: 'flex', gap: 8, alignItems: 'center', opacity: disabled ? 0.6 : 1 }}>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    disabled={disabled}
-                    onChange={() => toggleCompare(name)}
-                  />
+                <label
+                  key={name}
+                  style={{ display: 'flex', gap: 8, alignItems: 'center', opacity: disabled ? 0.6 : 1 }}
+                >
+                  <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggleCompare(name)} />
                   <span>{name}</span>
                 </label>
               );
@@ -395,61 +481,55 @@ export default function Ranking() {
           </div>
         )}
 
+        {/* AÇÕES */}
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ fontSize: 12, opacity: 0.8 }}>
-            Selecionados: <strong>{compareSelected.length}</strong>/5
+            Selecionados: <strong>{compareSelected.length}</strong>/{compareSelected.some((x) => /\((A|B)\)\s*$/.test(String(x))) ? 10 : 5}
           </div>
-        
+
           <button
             onClick={() => {
-              // pega a fonte que está sendo exibida na tabela atual
+              // Top 5 do ranking atual (tabela exibida)
               const source = Array.isArray(tableItems) ? tableItems : [];
-        
-              // extrai nomes, respeitando a ordem já exibida (posição 1..n)
               const top = source
                 .map((it) => getClubName(it))
                 .filter((n) => n && n !== '—')
                 .slice(0, 5);
-        
-              // aplica seleção
+
+              setTop5BError(null);
               setCompareError(null);
               setCompareSelected(top);
-              // não precisa mexer no compareMap: o effect carrega o que estiver faltando
+              // não zera compareMap: effect carrega o que estiver faltando
             }}
             disabled={!Array.isArray(tableItems) || tableItems.length === 0}
             title="Seleciona automaticamente os 5 primeiros do ranking exibido"
           >
             Top 5 do dia
           </button>
-        
+
           <button
             onClick={() => {
               setCompareSelected([]);
               setCompareMap({});
               setCompareError(null);
+              setTop5BError(null);
             }}
             disabled={compareSelected.length === 0}
           >
             Limpar seleção
           </button>
-        
+
           {compareBusy ? <span style={{ fontSize: 12, opacity: 0.75 }}>Carregando séries…</span> : null}
         </div>
 
-        {compareError ? (
-          <div style={{ fontSize: 13 }}>
-            Erro ao carregar comparação: {compareError.message}
-          </div>
-        ) : null}
+        {compareError ? <div style={{ fontSize: 13 }}>Erro ao carregar comparação: {compareError.message}</div> : null}
 
         {compareAligned.datasets.length >= 1 ? (
           <div style={{ height: 420, width: '100%' }}>
             <Line data={{ labels: compareAligned.labels, datasets: compareAligned.datasets }} options={lineOptions} />
           </div>
         ) : (
-          <div style={{ fontSize: 12, opacity: 0.8 }}>
-            Selecione pelo menos 1 clube para visualizar o gráfico comparativo.
-          </div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Selecione pelo menos 1 clube para visualizar o gráfico comparativo.</div>
         )}
       </div>
     </div>
