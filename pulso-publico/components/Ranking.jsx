@@ -127,6 +127,10 @@ export default function Ranking() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <h2 style={{ margin: 0 }}>Ranking Diário</h2>
+      <div style={{ fontSize: 13, opacity: 0.8 }}>
+        Exibindo: <strong>{selectedDate || 'último dia disponível'}</strong>
+      </div>
+
 
       {/* FILTRO DE DATA */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
