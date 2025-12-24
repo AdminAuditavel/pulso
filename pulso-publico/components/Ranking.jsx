@@ -1,3 +1,5 @@
+//pulso-publico/components/Ranking.jsx
+
 'use client';
 
 import useSWR from 'swr';
