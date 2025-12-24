@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -34,10 +35,18 @@ function normalizeSeries(series) {
   return arr;
 }
 
-export default function ClubPage({ params }) {
-  const clubName = useMemo(() => decodeURIComponent(params?.name || ''), [params]);
+export default function ClubPage() {
+  const params = useParams();
+
+  // params.name pode vir como string ou array (depende do caso); normalizamos para string
+  const clubName = useMemo(() => {
+    const raw = params?.name;
+    const asString = Array.isArray(raw) ? raw[0] : raw;
+    return asString ? decodeURIComponent(String(asString)) : '';
+  }, [params]);
 
   const [selectedDate, setSelectedDate] = useState(''); // YYYY-MM-DD (opcional)
+
   const [snapshot, setSnapshot] = useState(null);
   const [snapLoading, setSnapLoading] = useState(true);
   const [snapError, setSnapError] = useState(null);
@@ -47,8 +56,10 @@ export default function ClubPage({ params }) {
   const [seriesError, setSeriesError] = useState(null);
 
   async function fetchSnapshot(date) {
+    if (!clubName) return; // evita chamada inválida
     setSnapLoading(true);
     setSnapError(null);
+
     try {
       const qs = new URLSearchParams();
       qs.set('club', clubName);
@@ -57,7 +68,7 @@ export default function ClubPage({ params }) {
       const res = await fetch(`/api/club_snapshot?${qs.toString()}`);
       if (!res.ok) {
         const text = await res.text();
-        throw new Error(`Erro ao buscar snapshot (${res.status}) ${text ? `- ${text}` : ''}`);
+        throw new Error(`Erro ao buscar snapshot (${res.status})${text ? ` - ${text}` : ''}`);
       }
       const json = await res.json();
       setSnapshot(json);
@@ -70,11 +81,16 @@ export default function ClubPage({ params }) {
   }
 
   async function fetchSeries() {
+    if (!clubName) return; // evita chamada inválida
     setSeriesLoading(true);
     setSeriesError(null);
+
     try {
       const res = await fetch(`/api/club_series?club=${encodeURIComponent(clubName)}&limit_days=180`);
-      if (!res.ok) throw new Error(`Erro ao buscar série do clube (${res.status})`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Erro ao buscar série do clube (${res.status})${text ? ` - ${text}` : ''}`);
+      }
       const json = await res.json();
       setSeries(normalizeSeries(json));
     } catch (e) {
@@ -85,17 +101,20 @@ export default function ClubPage({ params }) {
     }
   }
 
+  // Primeiro load (quando o param aparece)
   useEffect(() => {
+    if (!clubName) return;
     fetchSnapshot('');
     fetchSeries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubName]);
 
+  // Atualiza painel quando troca data
   useEffect(() => {
-    // quando mudar a data, atualiza apenas o snapshot (painel)
+    if (!clubName) return;
     fetchSnapshot(selectedDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate]);
+  }, [selectedDate, clubName]);
 
   const lineData = useMemo(() => {
     return {
@@ -124,22 +143,16 @@ export default function ClubPage({ params }) {
     };
   }, []);
 
-  // Mini “drivers” (Volume vs Sentimento) para a data do snapshot
   const driversData = useMemo(() => {
     const vol = toNumber(snapshot?.volume_total);
     const sent = toNumber(snapshot?.sentiment_score);
 
     return {
-      labels: ['Volume', 'Sentimento'],
+      labels: ['Volume', 'Sentimento (x100)'],
       datasets: [
         {
           label: 'Drivers do dia',
-          data: [
-            vol !== null ? vol : 0,
-            // para sentimento, escala para visual ficar legível (opcional):
-            // se quiser puro, deixe só `sent !== null ? sent : 0`
-            sent !== null ? Math.round(sent * 100) : 0,
-          ],
+          data: [vol !== null ? vol : 0, sent !== null ? Math.round(sent * 100) : 0],
           backgroundColor: ['#16A34A', '#F97316'],
         },
       ],
@@ -150,31 +163,43 @@ export default function ClubPage({ params }) {
     return {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: { enabled: true },
-      },
+      plugins: { legend: { display: false }, tooltip: { enabled: true } },
       scales: { y: { beginAtZero: true } },
     };
   }, []);
 
+  // Se ainda não carregou o param
+  if (!clubName) {
+    return (
+      <main style={{ maxWidth: 980, margin: '0 auto', padding: 16 }}>
+        <div>Carregando clube…</div>
+      </main>
+    );
+  }
+
   return (
     <main style={{ maxWidth: 980, margin: '0 auto', padding: 16, display: 'grid', gap: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          flexWrap: 'wrap',
+        }}
+      >
         <div style={{ display: 'grid', gap: 4 }}>
           <h1 style={{ margin: 0, fontSize: 22 }}>Clube — {clubName}</h1>
           <div style={{ fontSize: 12, opacity: 0.8 }}>
-            <Link href="/" style={{ textDecoration: 'underline' }}>Voltar ao ranking</Link>
+            <Link href="/" style={{ textDecoration: 'underline' }}>
+              Voltar ao ranking
+            </Link>
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ fontSize: 13 }}>Data (painel do dia):</label>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-          />
+          <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
           <button onClick={() => setSelectedDate('')} title="Usar o último dia disponível">
             Último dia
           </button>
@@ -231,11 +256,10 @@ export default function ClubPage({ params }) {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
+            <div style={{ display: 'grid', gap: 8 }}>
               <div style={{ fontSize: 12, opacity: 0.75 }}>
-                Nota: no gráfico “Drivers”, o sentimento está multiplicado por 100 (apenas para visual).
+                Nota: no gráfico “Drivers”, o sentimento está multiplicado por 100 apenas para visual.
               </div>
-
               <div style={{ height: 220 }}>
                 <Bar data={driversData} options={driversOptions} />
               </div>
