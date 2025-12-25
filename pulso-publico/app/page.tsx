@@ -9,10 +9,8 @@ function Header() {
       <div className={styles.headerInner}>
         <Link href="/" className={styles.brand}>
           <a className={styles.brandLink}>
-            {/* Logo: adjust path if the image is not served from /Documentos in production.
-                Prefer placing the file in the public/Documentos/ folder so the path below works. */}
             <Image
-              src="/Documentos/Logotipo_Comentaram.png"
+              src="/public/Logotipo_Comentaram.png"
               alt="Comentaram"
               width={160}
               height={40}
