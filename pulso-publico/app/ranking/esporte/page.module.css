@@ -1,9 +1,13 @@
 :root{
   --c-1: #d4cdc5;
-  --c-2: #5b88a5;
-  --c-3: #f4f4f2;
+  --c-2: #5b88a5; /* cor primária solicitada */
+  --c-3: #f4f4f2; /* fundo */
   --c-4: #191013;
   --c-5: #243a69;
+
+  --primary: var(--c-2);
+  --bg: var(--c-3);
+  --text: var(--c-4);
 }
 
 /* page container */
@@ -12,24 +16,44 @@
   margin: 0 auto;
   padding: 20px;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-  color: var(--c-4);
+  color: var(--text);
+  background: var(--bg); /* fundo aplicado */
+  min-height: 100vh;
+  box-sizing: border-box;
 }
 
 /* header */
 .header{
+  display:block;
+  margin-bottom: 14px;
+}
+.headerRow{
+  display:flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.logoLink{
+  display:inline-flex;
+  align-items:center;
+  text-decoration: none;
+}
+.logoAnchor{
+  display:inline-flex;
+  align-items:center;
+}
+.headerText{
   display:flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 14px;
 }
 .title{
   color: var(--c-5);
   margin: 0;
-  font-size: 28px;
+  font-size: 24px;
 }
 .subtitle{
-  color: #6b6b6b;
-  font-size: 14px;
+  color: #444;
+  font-size: 13px;
 }
 
 /* controls */
@@ -52,7 +76,7 @@
   align-items:center;
 }
 
-/* basic controls style */
+/* basic controls style - agora com aparência de botão */
 .label{
   font-size: 14px;
   color: #444;
@@ -61,24 +85,43 @@
   padding: 8px;
   border-radius: 8px;
   border: 1px solid rgba(0,0,0,0.06);
+  background: #fff;
 }
+
+/* Botões */
 .btn{
-  background: transparent;
-  border: 1px solid rgba(36,58,105,0.08);
-  color: var(--c-5);
-  padding: 8px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 700;
-}
-.activeBtn{
-  background: var(--c-5);
+  background: var(--primary);
   color: var(--c-3);
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+  box-shadow: 0 6px 18px rgba(36,58,105,0.06);
+  transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+}
+.btn:hover:not(:disabled){
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(36,58,105,0.10);
+}
+.btn:disabled{
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.activeBtn{
+  background: color-mix(in srgb, var(--primary) 85%, black 5%); /* ligeiramente mais escuro */
+  color: var(--c-3);
+  padding: 8px 12px;
+  border-radius: 10px;
   border: none;
   cursor: pointer;
   font-weight: 800;
+  box-shadow: 0 10px 26px rgba(36,58,105,0.10);
 }
 
 /* grid of cards */
