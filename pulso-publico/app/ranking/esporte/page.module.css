@@ -1,0 +1,132 @@
+/pulso-publico/app/ranking/esporte/page.module.css
+
+:root{
+  --c-1: #d4cdc5;
+  --c-2: #5b88a5;
+  --c-3: #f4f4f2;
+  --c-4: #191013;
+  --c-5: #243a69;
+}
+
+/* page container */
+.container{
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  color: var(--c-4);
+}
+
+/* header */
+.header{
+  display:flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.title{
+  color: var(--c-5);
+  margin: 0;
+  font-size: 28px;
+}
+.subtitle{
+  color: #6b6b6b;
+  font-size: 14px;
+}
+
+/* controls */
+.controls{
+  display:flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.leftControls{
+  display:flex;
+  gap: 8px;
+  align-items:center;
+}
+.rightControls{
+  display:flex;
+  gap: 8px;
+  align-items:center;
+}
+
+/* basic controls style */
+.label{
+  font-size: 14px;
+  color: #444;
+}
+.inputDate{
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,0.06);
+}
+.btn{
+  background: transparent;
+  border: 1px solid rgba(36,58,105,0.08);
+  color: var(--c-5);
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+}
+.activeBtn{
+  background: var(--c-5);
+  color: var(--c-3);
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+/* grid of cards */
+.grid{
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+/* card wrapper used for skeleton spacing */
+.cardWrapper{
+  width: 100%;
+}
+
+/* footer */
+.footer{
+  margin-top: 20px;
+  display: flex;
+  justify-content: space-between;
+  color: #6b6b6b;
+  font-size: 13px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.footerRight{
+  color: #6b6b6b;
+}
+
+/* responsive */
+@media(min-width: 880px){
+  .grid{
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media(min-width: 1200px){
+  .grid{
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+.errorBox{
+  border: 1px solid rgba(0,0,0,0.06);
+  padding: 12px;
+  border-radius: 8px;
+  background: #fff;
+}
+.empty{
+  color: #666;
+  font-size: 14px;
+}
