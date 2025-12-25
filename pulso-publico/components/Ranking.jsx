@@ -76,6 +76,7 @@ function parseYYYYMMDD(s) {
   if (!y || !mo || !d) return null;
   return new Date(Date.UTC(y, mo - 1, d));
 }
+
 function formatYYYYMMDD(dateUtc) {
   if (!(dateUtc instanceof Date)) return '';
   const y = dateUtc.getUTCFullYear();
@@ -83,15 +84,25 @@ function formatYYYYMMDD(dateUtc) {
   const d = String(dateUtc.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+
 function prevDay(yyyyMMdd) {
   const dt = parseYYYYMMDD(yyyyMMdd);
   if (!dt) return '';
   dt.setUTCDate(dt.getUTCDate() - 1);
   return formatYYYYMMDD(dt);
 }
+
 function getAggregationDateFromItem(item) {
   const d = item?.aggregation_date ?? item?.metric_date ?? item?.date;
   return d ? String(d).slice(0, 10) : '';
+}
+
+function formatDateBR(yyyyMMdd) {
+  if (!yyyyMMdd) return '—';
+  const s = String(yyyyMMdd).slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return s;
+  return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
 function buildAbSummary(aItems, bItems) {
@@ -172,7 +183,11 @@ export default function Ranking() {
 
   const [selectedDate, setSelectedDate] = useState(''); // YYYY-MM-DD
   const [selectedClub, setSelectedClub] = useState(''); // nome
-   
+
+  // NOVO: para exibir fallback (resolved_date) e o que o usuário pediu
+  const [resolvedDate, setResolvedDate] = useState(''); // YYYY-MM-DD
+  const [requestedDate, setRequestedDate] = useState(''); // YYYY-MM-DD
+
   const fetchData = async (date) => {
     setLoading(true);
     setError(null);
@@ -180,23 +195,25 @@ export default function Ranking() {
       const qs = date ? `?date=${encodeURIComponent(date)}` : '';
       const res = await fetch(`/api/daily_ranking${qs}`);
       if (!res.ok) throw new Error('Erro ao buscar dados');
-  
+
       const json = await res.json();
-  
+
       // compatibilidade:
       // - API antiga: retorna array direto
       // - API nova: retorna { resolved_date, data: [...] }
-      const arr = Array.isArray(json)
-        ? json
-        : Array.isArray(json?.data)
-          ? json.data
-          : [];
-  
+      const arr = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : [];
+
       setData(arr);
-  
-      // opcional: se quiser mostrar a data resolvida (fallback)
+
+      // guarda qual data foi pedida (para mostrar aviso quando houver fallback)
+      setRequestedDate(date ? String(date).slice(0, 10) : '');
+
+      // captura a data resolvida do backend (envelope novo) ou tenta inferir pela primeira linha
       if (!Array.isArray(json) && json?.resolved_date) {
-        // setResolvedDate(json.resolved_date)
+        setResolvedDate(String(json.resolved_date).slice(0, 10));
+      } else {
+        const inferred = arr?.[0] ? getAggregationDateFromItem(arr[0]) : '';
+        setResolvedDate(inferred);
       }
     } catch (err) {
       setError(err);
@@ -210,12 +227,13 @@ export default function Ranking() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Data efetiva (quando selectedDate vazio, inferimos do payload)
+  // Data efetiva (prioriza resolvedDate quando o backend faz fallback)
   const effectiveDate = useMemo(() => {
+    if (resolvedDate) return resolvedDate;
     if (selectedDate) return selectedDate;
     if (!Array.isArray(data) || data.length === 0) return '';
     return getAggregationDateFromItem(data[0]) || '';
-  }, [selectedDate, data]);
+  }, [resolvedDate, selectedDate, data]);
 
   const clubOptions = useMemo(() => {
     if (!Array.isArray(data)) return [];
@@ -300,7 +318,7 @@ export default function Ranking() {
           return;
         }
         const json = await res.json();
-        const arr = Array.isArray(json) ? json : [];
+        const arr = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : [];
 
         const rm = new Map();
         const mm = new Map();
@@ -636,17 +654,25 @@ export default function Ranking() {
       <h2 style={{ margin: 0 }}>Ranking Diário</h2>
 
       <div style={{ fontSize: 13, opacity: 0.85 }}>
-        Exibindo: <strong>{effectiveDate || '—'}</strong>
+        Exibindo: <strong>{formatDateBR(effectiveDate)}</strong>
+        {requestedDate && resolvedDate && resolvedDate !== requestedDate ? (
+          <span style={{ marginLeft: 10, fontSize: 12, opacity: 0.8 }}>
+            (data resolvida automaticamente para <strong>{formatDateBR(resolvedDate)}</strong> — você selecionou{' '}
+            {formatDateBR(requestedDate)})
+          </span>
+        ) : null}
+
         {selectedClub ? (
           <>
             {' '}
             | Clube: <strong>{selectedClub}</strong>
           </>
         ) : null}
+
         {prevLoading ? (
           <span style={{ marginLeft: 10, fontSize: 12, opacity: 0.75 }}>Calculando comparações…</span>
         ) : prevDateUsed ? (
-          <span style={{ marginLeft: 10, fontSize: 12, opacity: 0.75 }}>vs {prevDateUsed}</span>
+          <span style={{ marginLeft: 10, fontSize: 12, opacity: 0.75 }}>vs {formatDateBR(prevDateUsed)}</span>
         ) : null}
       </div>
 
@@ -699,7 +725,7 @@ export default function Ranking() {
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
           <div style={{ fontSize: 14, fontWeight: 700 }}>Insights do dia</div>
           <div style={{ fontSize: 12, opacity: 0.75 }}>
-            Base: {effectiveDate || '—'} {insights?.hasPrev ? `vs ${prevDateUsed}` : '(sem dia anterior)'}
+            Base: {formatDateBR(effectiveDate)} {insights?.hasPrev ? `vs ${formatDateBR(prevDateUsed)}` : '(sem dia anterior)'}
           </div>
         </div>
 
@@ -813,7 +839,7 @@ export default function Ranking() {
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
           <div style={{ fontSize: 14, fontWeight: 700 }}>Top Movers (posição)</div>
           <div style={{ fontSize: 12, opacity: 0.75 }}>
-            Base: ranking exibido ({effectiveDate || '—'}) vs {prevDateUsed || 'dia anterior'}
+            Base: ranking exibido ({formatDateBR(effectiveDate)}) vs {formatDateBR(prevDateUsed || '')}
           </div>
         </div>
 
@@ -921,7 +947,7 @@ export default function Ranking() {
 
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ fontSize: 12 }}>
-              Data A: <strong>{effectiveDate || '—'}</strong>{' '}
+              Data A: <strong>{formatDateBR(effectiveDate)}</strong>{' '}
               <span style={{ marginLeft: 8 }}>
                 (cor A: <span style={{ color: COLOR_A, fontWeight: 700 }}>azul</span>)
               </span>
@@ -952,7 +978,7 @@ export default function Ranking() {
                   const resB = await fetch(`/api/daily_ranking?date=${encodeURIComponent(compareDateB)}`);
                   if (!resB.ok) throw new Error(`Falha ao buscar ranking da Data B (${resB.status})`);
                   const bJson = await resB.json();
-                  const bItems = Array.isArray(bJson) ? bJson : [];
+                  const bItems = Array.isArray(bJson) ? bJson : Array.isArray(bJson?.data) ? bJson.data : [];
 
                   const topA = aItems
                     .map((it) => getClubName(it))
