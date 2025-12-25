@@ -1,7 +1,7 @@
 // pulso-publico/components/Ranking.jsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   Chart as ChartJS,
@@ -15,10 +15,13 @@ import {
 } from 'chart.js';
 import { Bar, Line } from 'react-chartjs-2';
 
+import TrendBadge from './TrendBadge';
+import MiniSparkline from './MiniSparkline';
+
 ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip, Legend);
 
 /* ============================
-   Helpers
+   Helpers (mantive/inseri melhorias)
 ============================ */
 function getClubName(item) {
   if (!item) return '—';
@@ -35,11 +38,12 @@ function getClubName(item) {
       // ignore
     }
   }
-  if (item.club_id) return item.club_id.slice(0, 8) + '…';
+  if (item.club_id) return String(item.club_id).slice(0, 8) + '…';
   return '—';
 }
 
 function toNumber(x) {
+  if (x === null || x === undefined || x === '') return null;
   const n = typeof x === 'string' ? Number(String(x).replace(',', '.')) : Number(x);
   return Number.isFinite(n) ? n : null;
 }
@@ -170,6 +174,9 @@ const MANUAL_PALETTE = ['#2563EB', '#16A34A', '#7C3AED', '#DC2626', '#0EA5E9'];
 const COLOR_A = '#2563EB'; // azul
 const COLOR_B = '#F97316'; // laranja
 
+// Formatter PT-BR
+const NF = new Intl.NumberFormat('pt-BR');
+
 /* ============================
    Component
 ============================ */
@@ -188,27 +195,36 @@ export default function Ranking() {
   const [resolvedDate, setResolvedDate] = useState(''); // YYYY-MM-DD
   const [requestedDate, setRequestedDate] = useState(''); // YYYY-MM-DD
 
+  // refs para abort controllers
+  const dataFetchCtrlRef = useRef(null);
+  const prevFetchCtrlRef = useRef(null);
+  const compareFetchCtrlRef = useRef(null);
+
   const fetchData = async (date) => {
     setLoading(true);
     setError(null);
+
+    // abort previous
+    if (dataFetchCtrlRef.current) {
+      try {
+        dataFetchCtrlRef.current.abort();
+      } catch {}
+    }
+    const ctrl = new AbortController();
+    dataFetchCtrlRef.current = ctrl;
+
     try {
       const qs = date ? `?date=${encodeURIComponent(date)}` : '';
-      const res = await fetch(`/api/daily_ranking${qs}`);
+      const res = await fetch(`/api/daily_ranking${qs}`, { signal: ctrl.signal });
       if (!res.ok) throw new Error('Erro ao buscar dados');
 
       const json = await res.json();
 
-      // compatibilidade:
-      // - API antiga: retorna array direto
-      // - API nova: retorna { resolved_date, data: [...] }
       const arr = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : [];
 
       setData(arr);
-
-      // guarda qual data foi pedida (para mostrar aviso quando houver fallback)
       setRequestedDate(date ? String(date).slice(0, 10) : '');
 
-      // captura a data resolvida do backend (envelope novo) ou tenta inferir pela primeira linha
       if (!Array.isArray(json) && json?.resolved_date) {
         setResolvedDate(String(json.resolved_date).slice(0, 10));
       } else {
@@ -216,14 +232,25 @@ export default function Ranking() {
         setResolvedDate(inferred);
       }
     } catch (err) {
-      setError(err);
+      if (err?.name !== 'AbortError') {
+        setError(err);
+        setData([]);
+      }
     } finally {
       setLoading(false);
+      dataFetchCtrlRef.current = null;
     }
   };
 
   useEffect(() => {
     fetchData('');
+    return () => {
+      if (dataFetchCtrlRef.current) {
+        try {
+          dataFetchCtrlRef.current.abort();
+        } catch {}
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -280,7 +307,6 @@ export default function Ranking() {
 
   /* ============================
      Tendência (vs dia anterior)
-     + Map completo do dia anterior (rank/score/volume/sent)
   ============================ */
   const [prevRankMap, setPrevRankMap] = useState(new Map()); // Map<clubName, rank_position>
   const [prevMetricsMap, setPrevMetricsMap] = useState(new Map()); // Map<clubName, {rank, score, volume, sent}>
@@ -289,9 +315,9 @@ export default function Ranking() {
   const [prevError, setPrevError] = useState(null);
 
   useEffect(() => {
-    async function fetchPrevRanking() {
-      setPrevError(null);
+    let cancelled = false;
 
+    async function fetchPrevRanking() {
       if (!effectiveDate) {
         setPrevDateUsed('');
         setPrevRankMap(new Map());
@@ -307,14 +333,26 @@ export default function Ranking() {
         return;
       }
 
+      // abort previous prev
+      if (prevFetchCtrlRef.current) {
+        try {
+          prevFetchCtrlRef.current.abort();
+        } catch {}
+      }
+      const ctrl = new AbortController();
+      prevFetchCtrlRef.current = ctrl;
+
       setPrevDateUsed(p);
       setPrevLoading(true);
+      setPrevError(null);
 
       try {
-        const res = await fetch(`/api/daily_ranking?date=${encodeURIComponent(p)}`);
+        const res = await fetch(`/api/daily_ranking?date=${encodeURIComponent(p)}`, { signal: ctrl.signal });
         if (!res.ok) {
-          setPrevRankMap(new Map());
-          setPrevMetricsMap(new Map());
+          if (!cancelled) {
+            setPrevRankMap(new Map());
+            setPrevMetricsMap(new Map());
+          }
           return;
         }
         const json = await res.json();
@@ -339,18 +377,32 @@ export default function Ranking() {
           mm.set(name, { rank: rankPos, score, volume, sent });
         }
 
-        setPrevRankMap(rm);
-        setPrevMetricsMap(mm);
+        if (!cancelled) {
+          setPrevRankMap(rm);
+          setPrevMetricsMap(mm);
+        }
       } catch (e) {
-        setPrevError(e);
-        setPrevRankMap(new Map());
-        setPrevMetricsMap(new Map());
+        if (e?.name !== 'AbortError' && !cancelled) {
+          setPrevError(e);
+          setPrevRankMap(new Map());
+          setPrevMetricsMap(new Map());
+        }
       } finally {
-        setPrevLoading(false);
+        if (!cancelled) setPrevLoading(false);
+        prevFetchCtrlRef.current = null;
       }
     }
 
     fetchPrevRanking();
+
+    return () => {
+      cancelled = true;
+      if (prevFetchCtrlRef.current) {
+        try {
+          prevFetchCtrlRef.current.abort();
+        } catch {}
+      }
+    };
   }, [effectiveDate]);
 
   function renderTrend(item, idx) {
@@ -358,13 +410,13 @@ export default function Ranking() {
     const name = getClubName(item);
     const prevRank = prevRankMap.get(name);
 
-    if (!prevDateUsed || !prevRank || !currRank) return <span style={{ opacity: 0.7 }}>—</span>;
+    if (!prevDateUsed || prevRank === undefined || prevRank === null || !currRank) return <span style={{ opacity: 0.7 }}>—</span>;
 
     const delta = prevRank - currRank;
 
-    if (delta > 0) return <span style={{ color: '#16A34A', fontWeight: 700 }}>↑ +{delta}</span>;
-    if (delta < 0) return <span style={{ color: '#DC2626', fontWeight: 700 }}>↓ {delta}</span>;
-    return <span style={{ opacity: 0.85, fontWeight: 700 }}>→ 0</span>;
+    if (delta > 0) return <TrendBadge direction="up" value={delta} />;
+    if (delta < 0) return <TrendBadge direction="down" value={Math.abs(delta)} />;
+    return <TrendBadge direction="flat" value={0} />;
   }
 
   /* ============================
@@ -403,23 +455,19 @@ export default function Ranking() {
   const insights = useMemo(() => {
     if (!Array.isArray(tableItems) || tableItems.length === 0) return null;
 
-    // Leader (#1)
     const first = tableItems[0];
     const leaderName = getClubName(first);
     const leaderScore = toNumber(first?.score ?? first?.iap ?? first?.iap_score);
 
-    // Max volume
     let maxVol = null;
     let maxVolName = null;
 
-    // Best / worst sentiment
     let bestSent = null;
     let bestSentName = null;
     let worstSent = null;
     let worstSentName = null;
 
-    // Biggest score delta vs prev day (needs prevMetricsMap)
-    let bestUp = null; // {name, delta, prev, curr}
+    let bestUp = null;
     let bestDown = null;
 
     for (let i = 0; i < tableItems.length; i += 1) {
@@ -449,7 +497,6 @@ export default function Ranking() {
         }
       }
 
-      // Δ score vs prev day
       const prev = prevMetricsMap.get(name);
       const prevScore = prev ? prev.score : null;
       if (currScore !== null && prevScore !== null && prevScore !== undefined) {
@@ -533,28 +580,46 @@ export default function Ranking() {
 
     let cancelled = false;
 
+    // abort previous batch
+    if (compareFetchCtrlRef.current) {
+      try {
+        compareFetchCtrlRef.current.abort();
+      } catch {}
+    }
+    const ctrl = new AbortController();
+    compareFetchCtrlRef.current = ctrl;
+
     async function loadMissing() {
       setCompareBusy(true);
       try {
         const updates = {};
+        // limitar concorrência simples: série por série, mas abortável
         for (const label of need) {
+          if (ctrl.signal.aborted) throw new Error('Abortado');
           const realName = stripAB(label);
-          const res = await fetch(`/api/club_series?club=${encodeURIComponent(realName)}&limit_days=180`);
+          const res = await fetch(`/api/club_series?club=${encodeURIComponent(realName)}&limit_days=180`, {
+            signal: ctrl.signal,
+          });
           if (!res.ok) throw new Error(`Falha ao buscar série: ${label}`);
           const json = await res.json();
           updates[label] = normalizeSeries(json);
         }
         if (!cancelled) setCompareMap((prev) => ({ ...prev, ...updates }));
       } catch (e) {
-        if (!cancelled) setCompareError(e);
+        if (!cancelled && e?.name !== 'AbortError') setCompareError(e);
       } finally {
         if (!cancelled) setCompareBusy(false);
       }
     }
 
     loadMissing();
+
     return () => {
       cancelled = true;
+      try {
+        ctrl.abort();
+      } catch {}
+      compareFetchCtrlRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compareSelected]);
@@ -638,7 +703,7 @@ export default function Ranking() {
   if (error)
     return (
       <div>
-        Erro ao buscar ranking: {error.message}
+        Erro ao buscar ranking: {String(error?.message ?? error)}
         <button onClick={() => fetchData(selectedDate)} style={{ marginLeft: 12 }}>
           Tentar novamente
         </button>
@@ -678,7 +743,7 @@ export default function Ranking() {
 
       {prevError ? (
         <div style={{ fontSize: 12, opacity: 0.9 }}>
-          Aviso: não foi possível carregar o dia anterior ({prevError.message})
+          Aviso: não foi possível carregar o dia anterior ({String(prevError?.message ?? prevError)})
         </div>
       ) : null}
 
@@ -740,7 +805,7 @@ export default function Ranking() {
                   {insights.leader.name}
                 </Link>{' '}
                 {insights.leader.score !== null ? (
-                  <span style={{ opacity: 0.85 }}>({insights.leader.score.toFixed(2)})</span>
+                  <span style={{ opacity: 0.85 }}>({NF.format(insights.leader.score)})</span>
                 ) : null}
               </div>
             </div>
@@ -790,7 +855,7 @@ export default function Ranking() {
                   <Link href={linkClub(insights.maxVol.name)} style={{ textDecoration: 'underline', fontWeight: 700 }}>
                     {insights.maxVol.name}
                   </Link>{' '}
-                  <span style={{ opacity: 0.85 }}>({insights.maxVol.value})</span>
+                  <span style={{ opacity: 0.85 }}>({NF.format(insights.maxVol.value)})</span>
                 </div>
               ) : (
                 <div style={{ fontSize: 12, opacity: 0.8 }}>—</div>
@@ -905,6 +970,7 @@ export default function Ranking() {
             <th style={{ textAlign: 'left', padding: 8 }}>Tendência</th>
             <th style={{ textAlign: 'left', padding: 8 }}>Clube</th>
             <th style={{ textAlign: 'left', padding: 8 }}>IAP</th>
+            <th style={{ textAlign: 'left', padding: 8 }}>Tendência 7d</th>
           </tr>
         </thead>
         <tbody>
@@ -912,9 +978,13 @@ export default function Ranking() {
             const clubName = getClubName(item);
             const href = `/club/${encodeURIComponent(clubName)}`;
             const rankPos = toNumber(item?.rank_position) ?? idx + 1;
+            const key = item?.club_id ?? `${clubName}::${rankPos}::${idx}`;
+
+            // para sparkline tentamos usar item.series se existir; senao vazio
+            const series = Array.isArray(item?.series) ? item.series.map((s) => toNumber(s?.value)) : [];
 
             return (
-              <tr key={item.club_id ?? idx}>
+              <tr key={key}>
                 <td style={{ padding: 8 }}>{rankPos}</td>
                 <td style={{ padding: 8 }}>{renderTrend(item, idx)}</td>
                 <td style={{ padding: 8 }}>
@@ -927,6 +997,9 @@ export default function Ranking() {
                   )}
                 </td>
                 <td style={{ padding: 8 }}>{item.score ?? item.iap ?? '—'}</td>
+                <td style={{ padding: 8, width: 120 }}>
+                  <MiniSparkline data={series} width={100} height={28} />
+                </td>
               </tr>
             );
           })}
@@ -980,6 +1053,8 @@ export default function Ranking() {
                   const bJson = await resB.json();
                   const bItems = Array.isArray(bJson) ? bJson : Array.isArray(bJson?.data) ? bJson.data : [];
 
+                  setAbSummary(buildAbSummary(aItems.slice(0, 20), bItems.slice(0, 20)));
+
                   const topA = aItems
                     .map((it) => getClubName(it))
                     .filter((n) => n && n !== '—')
@@ -989,8 +1064,6 @@ export default function Ranking() {
                     .map((it) => getClubName(it))
                     .filter((n) => n && n !== '—')
                     .slice(0, 5);
-
-                  setAbSummary(buildAbSummary(aItems.slice(0, 20), bItems.slice(0, 20)));
 
                   const merged = [...topA.map((n) => `${n} (A)`), ...topB.map((n) => `${n} (B)`)];
 
@@ -1005,7 +1078,7 @@ export default function Ranking() {
                 }
               }}
               disabled={top5BLoading}
-              title="Carrega Top 5 da Data A + Top 5 da Data B e sobrepõe no gráfico"
+              title="Carrega Top 5 A + B"
             >
               Carregar Top 5 A + B
             </button>
@@ -1013,7 +1086,7 @@ export default function Ranking() {
             {top5BLoading ? <span style={{ fontSize: 12, opacity: 0.75 }}>Carregando…</span> : null}
           </div>
 
-          {top5BError ? <div style={{ fontSize: 12 }}>Erro: {top5BError.message}</div> : null}
+          {top5BError ? <div style={{ fontSize: 12 }}>Erro: {String(top5BError?.message ?? top5BError)}</div> : null}
 
           {abSummary ? (
             <div style={{ border: '1px solid #eee', borderRadius: 10, padding: 10, display: 'grid', gap: 8 }}>
@@ -1121,7 +1194,7 @@ export default function Ranking() {
           {compareBusy ? <span style={{ fontSize: 12, opacity: 0.75 }}>Carregando séries…</span> : null}
         </div>
 
-        {compareError ? <div style={{ fontSize: 13 }}>Erro ao carregar comparação: {compareError.message}</div> : null}
+        {compareError ? <div style={{ fontSize: 13 }}>Erro ao carregar comparação: {String(compareError?.message ?? compareError)}</div> : null}
 
         {compareAligned.datasets.length >= 1 ? (
           <div style={{ height: 420, width: '100%' }}>
