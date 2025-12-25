@@ -1,154 +1,203 @@
 // app/api/club_snapshot/route.js
+export const runtime = "nodejs";
+export const revalidate = 60;
+
+async function sbFetch(url, supabaseKey) {
+  return fetch(url, {
+    method: "GET",
+    headers: {
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+      Accept: "application/json",
+    },
+    next: { revalidate },
+  });
+}
+
+function jsonResp(obj, status = 200) {
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function safeJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+async function resolveClubId(base, supabaseKey, clubName) {
+  const q = new URLSearchParams();
+  q.set("select", "id,name_official,name_short");
+  q.set("or", `(name_official.eq.${clubName},name_short.eq.${clubName})`);
+  q.set("limit", "1");
+
+  const res = await sbFetch(`${base}/clubs?${q.toString()}`, supabaseKey);
+  const text = await res.text();
+  if (!res.ok) return { error: "Erro ao buscar clube", details: text };
+
+  const arr = safeJson(text);
+  if (!Array.isArray(arr) || arr.length === 0) return { error: "Clube não encontrado", details: text };
+
+  return { id: arr[0].id };
+}
+
+async function getLatestAggregationDateForClub(base, supabaseKey, clubId) {
+  // tenta na view com names primeiro
+  const candidates = ["daily_ranking_with_names", "daily_ranking", "daily_rankings"];
+
+  for (const resource of candidates) {
+    const q = new URLSearchParams();
+    q.set("select", "aggregation_date");
+    q.set("club_id", `eq.${clubId}`);
+    q.set("order", "aggregation_date.desc");
+    q.set("limit", "1");
+
+    const res = await sbFetch(`${base}/${resource}?${q.toString()}`, supabaseKey);
+    const text = await res.text();
+    if (!res.ok) continue;
+
+    const arr = safeJson(text);
+    const d = arr?.[0]?.aggregation_date ? String(arr[0].aggregation_date).slice(0, 10) : "";
+    if (d) return d;
+  }
+
+  return "";
+}
+
 export async function GET(req) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      return new Response(
-        JSON.stringify({ error: "SUPABASE_URL ou SUPABASE_SERVICE_KEY não configurados" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
+      return jsonResp({ error: "SUPABASE_URL ou SUPABASE_SERVICE_KEY não configurados" }, 500);
     }
 
     const url = new URL(req.url);
-    const clubParam = (url.searchParams.get("club") || "").trim();
-    const dateParam = (url.searchParams.get("date") || "").trim(); // YYYY-MM-DD (opcional)
+    const club = (url.searchParams.get("club") || "").trim();
+    let date = (url.searchParams.get("date") || "").trim(); // opcional
 
-    if (!clubParam) {
-      return new Response(JSON.stringify({ error: "Parâmetro club é obrigatório" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+    if (!club) return jsonResp({ error: "Parâmetro club é obrigatório" }, 400);
+    if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return jsonResp({ error: "Parâmetro date deve estar no formato YYYY-MM-DD" }, 400);
     }
 
     const base = supabaseUrl.replace(/\/$/, "") + "/rest/v1";
-    const headers = {
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-      Accept: "application/json",
-    };
 
-    // 1) Resolve club_id pela tabela clubs
-    // Tenta name_official e name_short (case-insensitive) via ilike.
-    // Observação: para igualdade case-insensitive, usamos ilike e o valor exato.
-    const clubQueries = [
-      `${base}/clubs?select=id,name_official,name_short&name_official=ilike.${encodeURIComponent(clubParam)}&limit=1`,
-      `${base}/clubs?select=id,name_official,name_short&name_short=ilike.${encodeURIComponent(clubParam)}&limit=1`,
-    ];
-
-    let clubRow = null;
-    let lastClubErr = "";
-
-    for (const q of clubQueries) {
-      const res = await fetch(q, { headers });
-      const text = await res.text();
-      if (res.ok) {
-        const arr = (() => {
-          try {
-            return JSON.parse(text);
-          } catch {
-            return [];
-          }
-        })();
-        if (Array.isArray(arr) && arr.length > 0) {
-          clubRow = arr[0];
-          break;
-        }
-      } else {
-        lastClubErr = text;
-      }
-    }
-
-    if (!clubRow?.id) {
-      return new Response(
-        JSON.stringify({
-          error: "Clube não encontrado na tabela clubs pelo nome informado",
-          club: clubParam,
-          details: lastClubErr || null,
-          hint: "Verifique se club corresponde a name_official ou name_short (ex.: Cruzeiro, SPFC, etc.)",
-        }),
-        { status: 404, headers: { "Content-Type": "application/json" } }
+    // resolve clubId
+    const clubIdRes = await resolveClubId(base, supabaseKey, club);
+    if (!clubIdRes?.id) {
+      return jsonResp(
+        { error: clubIdRes?.error || "Erro ao resolver club_id", club, details: clubIdRes?.details || null },
+        404
       );
     }
+    const clubId = clubIdRes.id;
 
-    const clubId = clubRow.id;
-    const clubName = clubRow.name_short || clubRow.name_official || clubParam;
+    // resolve date quando não fornecida
+    if (!date) {
+      date = await getLatestAggregationDateForClub(base, supabaseKey, clubId);
+      if (!date) {
+        return jsonResp(
+          { error: "Não foi possível determinar a data mais recente para este clube", club, club_id: clubId },
+          404
+        );
+      }
+    }
 
-    // 2) Busca snapshot em daily_ranking_with_names (preferencial) ou daily_ranking
+    // busca snapshot do dia na view/tabela disponível
     const candidates = ["daily_ranking_with_names", "daily_ranking", "daily_rankings"];
     let snapshot = null;
-    let lastSnapErr = "";
+    let usedResource = "";
+    let lastErrorText = "";
 
     for (const resource of candidates) {
-      // Se date foi informado: filtra aggregation_date=eq.YYYY-MM-DD
-      // Se não: pega o mais recente order=aggregation_date.desc
-      const params = new URLSearchParams();
-      params.set("select", "*");
-      params.set("club_id", `eq.${clubId}`);
-      if (dateParam) {
-        params.set("aggregation_date", `eq.${dateParam}`);
-        params.set("limit", "1");
-      } else {
-        params.set("order", "aggregation_date.desc");
-        params.set("limit", "1");
-      }
+      const q = new URLSearchParams();
+      q.set("select", "*");
+      q.set("club_id", `eq.${clubId}`);
+      q.set("aggregation_date", `eq.${date}`);
+      q.set("limit", "1");
 
-      const target = `${base}/${resource}?${params.toString()}`;
-      const res = await fetch(target, { headers });
+      const res = await sbFetch(`${base}/${resource}?${q.toString()}`, supabaseKey);
       const text = await res.text();
 
       if (res.ok) {
-        let arr;
-        try {
-          arr = JSON.parse(text);
-        } catch {
-          arr = [];
-        }
+        const arr = safeJson(text);
         if (Array.isArray(arr) && arr.length > 0) {
           snapshot = arr[0];
+          usedResource = resource;
           break;
         } else {
-          // ok mas vazio: tenta o próximo resource
-          lastSnapErr = text;
+          // sem dados para esse resource/data
+          usedResource = resource;
         }
       } else {
-        lastSnapErr = text;
+        lastErrorText = text;
+      }
+    }
+
+    // fallback: se a data escolhida não tem dados, pega última data com dados para o clube
+    if (!snapshot) {
+      const fallbackDate = await getLatestAggregationDateForClub(base, supabaseKey, clubId);
+      if (fallbackDate && fallbackDate !== date) {
+        date = fallbackDate;
+
+        for (const resource of candidates) {
+          const q = new URLSearchParams();
+          q.set("select", "*");
+          q.set("club_id", `eq.${clubId}`);
+          q.set("aggregation_date", `eq.${date}`);
+          q.set("limit", "1");
+
+          const res = await sbFetch(`${base}/${resource}?${q.toString()}`, supabaseKey);
+          const text = await res.text();
+
+          if (res.ok) {
+            const arr = safeJson(text);
+            if (Array.isArray(arr) && arr.length > 0) {
+              snapshot = arr[0];
+              usedResource = resource;
+              break;
+            }
+          } else {
+            lastErrorText = text;
+          }
+        }
       }
     }
 
     if (!snapshot) {
-      return new Response(
-        JSON.stringify({
-          error: "Snapshot não encontrado para o clube (data pode não existir ainda)",
-          club: clubParam,
+      return jsonResp(
+        {
+          error: "Snapshot não encontrado (view/tabela incompatível ou sem dados)",
+          club,
           club_id: clubId,
-          date: dateParam || null,
-          details: lastSnapErr || null,
-        }),
-        { status: 404, headers: { "Content-Type": "application/json" } }
+          requested_date: url.searchParams.get("date") || "",
+          details: lastErrorText,
+        },
+        404
       );
     }
 
+    // normaliza campos (mantém o que vier, mas garante algumas aliases úteis)
     const out = {
+      ...snapshot,
+      resolved_date: date,
+      source: usedResource,
+      club,
       club_id: clubId,
-      club_name: snapshot.club_name || clubName,
-      aggregation_date: snapshot.aggregation_date || null,
-      score: snapshot.score ?? snapshot.iap_score ?? snapshot.iap ?? null,
-      volume_total: snapshot.volume_total ?? null,
-      sentiment_score: snapshot.sentiment_score ?? null,
-      rank_position: snapshot.rank_position ?? null,
+      // aliases frequentes
+      score: snapshot.score ?? snapshot.iap_score ?? snapshot.iap ?? snapshot.score,
+      aggregation_date: snapshot.aggregation_date ?? date,
     };
 
-    return new Response(JSON.stringify(out), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResp(out, 200);
   } catch (err) {
     console.error("Erro na rota /api/club_snapshot:", err);
-    return new Response(JSON.stringify({ error: "Erro interno na API" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResp({ error: "Erro interno na API" }, 500);
   }
 }
