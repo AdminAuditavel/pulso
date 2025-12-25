@@ -38,7 +38,6 @@ function normalizeSeries(series) {
 export default function ClubPage() {
   const params = useParams();
 
-  // params.name pode vir como string ou array (depende do caso); normalizamos para string
   const clubName = useMemo(() => {
     const raw = params?.name;
     const asString = Array.isArray(raw) ? raw[0] : raw;
@@ -55,8 +54,13 @@ export default function ClubPage() {
   const [seriesLoading, setSeriesLoading] = useState(true);
   const [seriesError, setSeriesError] = useState(null);
 
+  // Sources do dia
+  const [sourcesDay, setSourcesDay] = useState(null);
+  const [sourcesLoading, setSourcesLoading] = useState(true);
+  const [sourcesError, setSourcesError] = useState(null);
+
   async function fetchSnapshot(date) {
-    if (!clubName) return; // evita chamada inválida
+    if (!clubName) return;
     setSnapLoading(true);
     setSnapError(null);
 
@@ -81,7 +85,7 @@ export default function ClubPage() {
   }
 
   async function fetchSeries() {
-    if (!clubName) return; // evita chamada inválida
+    if (!clubName) return;
     setSeriesLoading(true);
     setSeriesError(null);
 
@@ -101,18 +105,45 @@ export default function ClubPage() {
     }
   }
 
-  // Primeiro load (quando o param aparece)
+  async function fetchSourcesDay(date) {
+    if (!clubName) return;
+    setSourcesLoading(true);
+    setSourcesError(null);
+
+    try {
+      const qs = new URLSearchParams();
+      qs.set('club', clubName);
+      if (date) qs.set('date', date);
+
+      const res = await fetch(`/api/club_sources_day?${qs.toString()}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Erro ao buscar fontes do dia (${res.status})${text ? ` - ${text}` : ''}`);
+      }
+      const json = await res.json();
+      setSourcesDay(json);
+    } catch (e) {
+      setSourcesError(e);
+      setSourcesDay(null);
+    } finally {
+      setSourcesLoading(false);
+    }
+  }
+
+  // Primeiro load
   useEffect(() => {
     if (!clubName) return;
     fetchSnapshot('');
     fetchSeries();
+    fetchSourcesDay('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubName]);
 
-  // Atualiza painel quando troca data
+  // Atualiza quando troca data (painel + fontes do dia)
   useEffect(() => {
     if (!clubName) return;
     fetchSnapshot(selectedDate);
+    fetchSourcesDay(selectedDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, clubName]);
 
@@ -168,7 +199,37 @@ export default function ClubPage() {
     };
   }, []);
 
-  // Se ainda não carregou o param
+  // Gráfico: Volume por fonte
+  const sourcesBarData = useMemo(() => {
+    const src = sourcesDay?.sources;
+    if (!Array.isArray(src) || src.length === 0) return null;
+
+    return {
+      labels: src.map((s) => s.source_code || s.source_id),
+      datasets: [
+        {
+          label: 'Volume (dia)',
+          data: src.map((s) => toNumber(s.volume_total) ?? 0),
+        },
+      ],
+    };
+  }, [sourcesDay]);
+
+  const sourcesBarOptions = useMemo(() => {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: true } },
+      scales: { y: { beginAtZero: true } },
+    };
+  }, []);
+
+  const sourcesTop3 = useMemo(() => {
+    const src = sourcesDay?.sources;
+    if (!Array.isArray(src)) return [];
+    return [...src].slice(0, 3);
+  }, [sourcesDay]);
+
   if (!clubName) {
     return (
       <main style={{ maxWidth: 980, margin: '0 auto', padding: 16 }}>
@@ -208,7 +269,7 @@ export default function ClubPage() {
 
       {/* Painel do dia (snapshot) */}
       <section style={{ border: '1px solid #ddd', borderRadius: 12, padding: 12, display: 'grid', gap: 10 }}>
-        <div style={{ fontSize: 14, fontWeight: 700 }}>Painel do dia (por que mudou)</div>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>Painel do dia</div>
 
         {snapLoading ? (
           <div>Carregando painel…</div>
@@ -267,6 +328,63 @@ export default function ClubPage() {
           </>
         ) : (
           <div>Nenhum snapshot encontrado.</div>
+        )}
+      </section>
+
+      {/* De onde veio o score hoje? (fontes) */}
+      <section style={{ border: '1px solid #ddd', borderRadius: 12, padding: 12, display: 'grid', gap: 10 }}>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>De onde veio o score hoje?</div>
+
+        {sourcesLoading ? (
+          <div>Carregando fontes do dia…</div>
+        ) : sourcesError ? (
+          <div style={{ display: 'grid', gap: 8 }}>
+            <div>Erro ao buscar fontes do dia: {sourcesError.message}</div>
+            <button onClick={() => fetchSourcesDay(selectedDate)}>Tentar novamente</button>
+          </div>
+        ) : !sourcesDay || !Array.isArray(sourcesDay.sources) || sourcesDay.sources.length === 0 ? (
+          <div style={{ fontSize: 13, opacity: 0.85 }}>Sem dados de buckets por fonte para este dia.</div>
+        ) : (
+          <>
+            <div style={{ fontSize: 12, opacity: 0.8 }}>
+              Data: <strong>{sourcesDay.date}</strong> | Top 3 fontes por volume:{' '}
+              {sourcesTop3.map((s, i) => (
+                <span key={s.source_id}>
+                  {i > 0 ? ', ' : ''}
+                  <strong>{s.source_code}</strong> ({s.volume_total})
+                </span>
+              ))}
+            </div>
+
+            <div style={{ height: 260 }}>
+              <Bar data={sourcesBarData} options={sourcesBarOptions} />
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: 8 }}>Fonte</th>
+                    <th style={{ textAlign: 'left', padding: 8 }}>Volume</th>
+                    <th style={{ textAlign: 'left', padding: 8 }}>Sentimento médio</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sourcesDay.sources.map((s) => (
+                    <tr key={s.source_id}>
+                      <td style={{ padding: 8 }}>{s.source_code}</td>
+                      <td style={{ padding: 8 }}>{s.volume_total}</td>
+                      <td style={{ padding: 8 }}>
+                        {s.sentiment_avg === null || s.sentiment_avg === undefined
+                          ? '—'
+                          : Number(s.sentiment_avg).toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
 
