@@ -59,6 +59,34 @@ function formatDayMonth(yyyyMMdd) {
   return `${m[3]}/${m[2]}`;
 }
 
+function pickIapNumber(item) {
+  // Tenta as chaves mais comuns e também o _computed_value que você cria
+  const raw =
+    item?.iap_score ??
+    item?.score ??
+    item?.iap ??
+    item?.value ??
+    item?._computed_value ??
+    null;
+
+  return toNumber(raw); // deve retornar number ou null
+}
+
+function withNormalizedIap(item, fallbackComputed = null) {
+  const n = pickIapNumber(item);
+  const computed = n !== null ? n : fallbackComputed;
+
+  // Mantém o objeto compatível com componentes antigos:
+  // - score e iap_score numéricos quando possível
+  return {
+    ...item,
+    _computed_value: computed === undefined ? null : computed,
+    iap_score: computed === null ? item?.iap_score : computed,
+    score: computed === null ? item?.score : computed,
+    iap: computed === null ? item?.iap : computed,
+  };
+}
+
 function stripAB(label) {
   return String(label || '').replace(/\s*\((A|B)\)\s*$/, '').trim();
 }
@@ -179,8 +207,11 @@ export default function Ranking() {
     return arr.map((r) => {
       const item = { ...r.rawItem };
       item.rank_position = r.rank_position;
-      item._computed_value = r.value === undefined ? null : r.value;
-      return item;
+    
+      // r.value aqui já é o melhor número deduplicado do clube
+      const computed = r.value === undefined ? null : r.value;
+    
+      return withNormalizedIap(item, computed);
     });
   }, [data]);
 
@@ -248,8 +279,9 @@ export default function Ranking() {
     if (!Array.isArray(rankedData)) return [];
     return rankedData
       .map((item) => {
-        const raw = item?.score ?? item?._computed_value ?? item?.iap ?? item?.iap_score;
-        let value = toNumber(raw);
+        let value = toNumber(item?._computed_value);
+        if (value === null) value = pickIapNumber(item);
+
         const wasNull = value === null;
         if (value === null) value = 0;
         const club = getClubName(item);
@@ -331,7 +363,7 @@ export default function Ranking() {
           const rp = toNumber(it?.rank_position);
           const rankPos = rp !== null ? rp : i + 1;
 
-          const score = toNumber(it?.score ?? it?.iap ?? it?.iap_score);
+          const score = pickIapNumber(it);
           const volume = toNumber(it?.volume_total);
           const sent = toNumber(it?.sentiment_score);
 
