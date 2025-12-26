@@ -34,7 +34,7 @@ export default function HeaderLogo({ title = 'Ranking Diário', category = '' })
     <div className={styles.headerRow}>
       <div className={styles.leftGroup}>
         <Link href="/" className={styles.logoAnchor} aria-label="Comentaram — voltar para a página inicial">
-          <Image src="/Logotipo_Comentaram.png" alt="Comentaram" width={160} height={40} priority />
+          <Image src="/Comentaram_#07889B.png" alt="Comentaram" width={160} height={40} priority />
         </Link>
 
         {category ? (
