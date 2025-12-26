@@ -1,8 +1,8 @@
 //pulso-publico/lib/rankingUtils.js
 
-export const MANUAL_PALETTE = ['#E9F1FA', '#00ABE4', '#FFFFFF', '#b1e1e9', '#f2e4f9'];
-export const COLOR_A = '#2563EB';
-export const COLOR_B = '#F97316';
+export const MANUAL_PALETTE = ['#D2EEFA', '#A3D8F1', '#54A6E1', '#255DAA', '#DE525E', '#FCE0D4'];
+export const COLOR_A = '#255DAA';
+export const COLOR_B = '#D2EEFA';
 
 export const NF = new Intl.NumberFormat('pt-BR');
 
