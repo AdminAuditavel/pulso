@@ -33,7 +33,7 @@ import {
   COLOR_B,
 } from '../lib/rankingUtils';
 
-// Chart.js registration
+// Chart.js registration (if not already globally registered elsewhere)
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -46,11 +46,15 @@ import {
 } from 'chart.js';
 ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip, Legend);
 
+/**
+ * Ranking (com ajustes de paleta e alinhamento de datas no compare A vs B)
+ */
 export default function Ranking() {
   /* ========== filtros / estados ========== */
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedClub, setSelectedClub] = useState('');
 
+  // requested/resolved date display
   const [resolvedDate, setResolvedDate] = useState('');
   const [requestedDate, setRequestedDate] = useState('');
 
@@ -73,7 +77,7 @@ export default function Ranking() {
   const { data: clubsJson, isValidating: clubsLoading } = useSWR('/api/clubs', fetcher, { revalidateOnFocus: false });
   const clubs = Array.isArray(clubsJson) ? clubsJson : [];
 
-  // effectiveDate
+  // effective aggregation date used for prev-day fetch etc
   const effectiveDate = useMemo(() => {
     if (resolvedDate) return resolvedDate;
     if (selectedDate) return selectedDate;
@@ -218,11 +222,12 @@ export default function Ranking() {
 
   /* ========== compare A/B (series) ========== */
   const compareFetchCtrlRef = useRef(null);
-  const [compareSelected, setCompareSelected] = useState([]);
-  const [compareMap, setCompareMap] = useState({});
+  const [compareSelected, setCompareSelected] = useState([]); // labels (e.g. "Club (A)" or "Club")
+  const [compareMap, setCompareMap] = useState({}); // { label: normalizedSeries[] }
   const [compareBusy, setCompareBusy] = useState(false);
   const [compareError, setCompareError] = useState(null);
 
+  // states for Data B / top5 flow
   const [compareDateB, setCompareDateB] = useState('');
   const [top5BLoading, setTop5BLoading] = useState(false);
   const [top5BError, setTop5BError] = useState(null);
@@ -267,25 +272,46 @@ export default function Ranking() {
       try { ctrl.abort(); } catch {}
       compareFetchCtrlRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compareSelected]);
 
+  // Alinha séries em labels diárias entre min e max (preenche com null quando não há valor)
   const compareAligned = useMemo(() => {
     const selected = compareSelected.filter((label) => compareMap[label]);
     if (selected.length === 0) return { labels: [], datasets: [] };
 
-    const dateSet = new Set();
+    // coleta todas as datas disponíveis nas séries
+    const allDatesSet = new Set();
     selected.forEach((label) => {
-      compareMap[label].forEach((r) => dateSet.add(r.date));
+      (compareMap[label] || []).forEach((r) => {
+        if (r && r.date) allDatesSet.add(String(r.date).slice(0, 10));
+      });
     });
 
-    const labels = Array.from(dateSet).sort((a, b) => String(a).localeCompare(String(b)));
+    if (allDatesSet.size === 0) return { labels: [], datasets: [] };
+
+    const dateArr = Array.from(allDatesSet).sort(); // YYYY-MM-DD ordering works lexicographically
+
+    // helpers UTC
+    const toUTCDate = (isoYmd) => {
+      const [y, m, d] = String(isoYmd).split('-').map((v) => Number(v));
+      return new Date(Date.UTC(y, m - 1, d));
+    };
+    const toISOYMD = (dt) => dt.toISOString().slice(0, 10);
+
+    // generate continuous daily labels between min and max
+    const minDate = dateArr[0];
+    const maxDate = dateArr[dateArr.length - 1];
+    const labels = [];
+    for (let cur = toUTCDate(minDate); cur <= toUTCDate(maxDate); cur.setUTCDate(cur.getUTCDate() + 1)) {
+      labels.push(toISOYMD(new Date(cur)));
+    }
 
     let manualIndex = 0;
-
     const datasets = selected.map((label) => {
-      const map = new Map(compareMap[label].map((r) => [r.date, r.value]));
+      const map = new Map((compareMap[label] || []).map((r) => [String(r.date).slice(0, 10), r.value]));
       const dataArr = labels.map((d) => (map.has(d) ? map.get(d) : null));
-      let color = '#6B7280';
+      let color = 'var(--c-1, #337d26)';
       if (/\(A\)\s*$/.test(label)) color = COLOR_A;
       else if (/\(B\)\s*$/.test(label)) color = COLOR_B;
       else {
@@ -300,22 +326,42 @@ export default function Ranking() {
         pointRadius: 2,
         pointHoverRadius: 4,
         borderWidth: 2,
-        spanGaps: false,
+        spanGaps: false, // keep gaps when data is null
       };
     });
 
     return { labels, datasets };
   }, [compareSelected, compareMap]);
 
+  // opções do chart com formatação de ticks (DD/MM/YYYY)
   const lineOptions = useMemo(() => {
     return {
       responsive: true,
       maintainAspectRatio: false,
       plugins: { legend: { display: true }, tooltip: { enabled: true } },
-      scales: { y: { beginAtZero: true } },
+      scales: {
+        x: {
+          ticks: {
+            callback: function (val) {
+              try {
+                // this.getLabelForValue é usado quando axis é category
+                const label = (typeof this.getLabelForValue === 'function') ? this.getLabelForValue(val) : val;
+                return formatDateBR(String(label).slice(0, 10));
+              } catch {
+                return String(val);
+              }
+            },
+            maxRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 10,
+          },
+        },
+        y: { beginAtZero: true },
+      },
       elements: { line: { tension: 0.25 } },
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [/* intentionally no deps beyond imports */]);
 
   /* ========== render guards ========== */
   if (rankingLoading) return <div className={ctrlStyles.container}>Carregando ranking…</div>;
@@ -439,7 +485,7 @@ export default function Ranking() {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <div style={{ fontSize: 12 }}>
                 Data A: <strong>{formatDateBR(effectiveDate)}</strong>
-                <span style={{ marginLeft: 8 }}>(cor A: <span style={{ color: COLOR_A, fontWeight: 700 }}>azul</span>)</span>
+                <span style={{ marginLeft: 8 }}>(cor A: <span style={{ color: COLOR_A, fontWeight: 700 }}>{COLOR_A}</span>)</span>
               </div>
 
               <label style={{ fontSize: 12 }}>Data B:</label>
@@ -451,7 +497,7 @@ export default function Ranking() {
               />
 
               <div style={{ fontSize: 12 }}>
-                cor B: <span style={{ color: COLOR_B, fontWeight: 700 }}>laranja</span>
+                cor B: <span style={{ color: COLOR_B, fontWeight: 700 }}>{COLOR_B}</span>
               </div>
 
               <button
