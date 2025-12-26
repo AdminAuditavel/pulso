@@ -1,3 +1,5 @@
+//components/RankingTable.jsx
+
 'use client';
 
 import React from 'react';
