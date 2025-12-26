@@ -407,19 +407,24 @@ export default function Ranking() {
 
         for (let i = 0; i < arr.length; i += 1) {
           const it = arr[i];
+        
           const display = getClubName(it);
           const key = normalizeClubKey(display);
-
+        
           if (!display || display === '—' || !key) continue;
-
+        
           const rp = toNumber(it?.rank_position);
           const rankPos = rp !== null ? rp : i + 1;
-
+        
           const score = pickIapNumber(it);
           const volume = toNumber(it?.volume_total);
           const sent = toNumber(it?.sentiment_score);
-
+        
+          // IMPORTANT: salva nas 2 chaves (display e normalizada)
+          rm.set(display, rankPos);
           rm.set(key, rankPos);
+        
+          mm.set(display, { rank: rankPos, score, volume, sent });
           mm.set(key, { rank: rankPos, score, volume, sent });
         }
 
@@ -451,13 +456,20 @@ export default function Ranking() {
 
   function renderTrend(item, idx) {
     const currRank = toNumber(item?.rank_position) !== null ? toNumber(item?.rank_position) : idx + 1;
-
-    const key = item?.__club_key || clubKeyFromItem(item);
-    const prevRank = prevRankMap.get(key);
-
-    if (!prevDateUsed || prevRank === undefined || prevRank === null || !currRank) return <span style={{ opacity: 0.7 }}>—</span>;
-
+  
+    const display = getClubName(item);
+    const key = item?.__club_key || normalizeClubKey(display);
+  
+    const prevRank =
+      prevRankMap.get(display) ??
+      prevRankMap.get(key);
+  
+    if (!prevDateUsed || prevRank === undefined || prevRank === null || !currRank) {
+      return <span style={{ opacity: 0.7 }}>—</span>;
+    }
+  
     const delta = prevRank - currRank;
+  
     if (delta > 0) return <TrendBadge direction="up" value={delta} />;
     if (delta < 0) return <TrendBadge direction="down" value={Math.abs(delta)} />;
     return <TrendBadge direction="flat" value={0} />;
