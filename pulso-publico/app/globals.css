@@ -1,26 +1,111 @@
 @import "tailwindcss";
 
+/* Paleta global + tokens (sincronizada com controls.module.css) */
 :root {
+  /* página */
   --background: #ffffff;
-  --foreground: #8ab3cf;
+  --foreground: #000000;
+
+  /* paleta verde solicitada */
+  --c-1: #337d26; /* primário forte */
+  --c-2: #549d45;
+  --c-3: #74be63;
+  --c-4: #95de82;
+  --c-5: #b6ffa0;
+
+  /* aliases usados por outros módulos */
+  --primary: var(--c-1);
+  --muted: rgba(0,0,0,0.48);
+  --card: #f6fff4;
+
+  /* tipografia (pode apontar para fontes locais ou externas) */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace;
 }
 
+/* Theme inline (compatibilidade com utilitários que usem @theme inline) */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
 }
 
+/* Dark mode: mantém legibilidade (inverte em áreas onde for necessário) */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #071204; /* tom escuro com viés esverdeado */
+    --foreground: #e6f8e6;
+    --card: rgba(51,125,38,0.06);
   }
 }
 
+/* Reset / base */
+* {
+  box-sizing: border-box;
+}
+
+html, body, #__next {
+  height: 100%;
+}
+
 body {
+  margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.45;
+}
+
+/* Links */
+a {
+  color: var(--c-1);
+  text-decoration: none;
+}
+
+a:hover, a:focus {
+  text-decoration: underline;
+}
+
+/* Headings (garante contraste e pesos) */
+h1, h2, h3, h4 {
+  color: var(--foreground);
+  margin: 0 0 8px 0;
+  font-weight: 700;
+}
+
+/* Buttons: garantir fallback caso módulos CSS não carreguem */
+button {
+  font-family: inherit;
+}
+
+/* Utility classes usados por componentes */
+.bg-card {
+  background: var(--card);
+}
+
+.text-muted {
+  color: var(--muted);
+}
+
+/* Pequenos ajustes responsivos padrões */
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 18px;
+}
+
+/* Evita que imagens SVG/PNG quebrem visualmente */
+img {
+  max-width: 100%;
+  display: block;
+}
+
+/* Forçar boa legibilidade em dark mode */
+@media (prefers-color-scheme: dark) {
+  h1, h2, h3, h4, p, a, span, label, option {
+    color: var(--foreground);
+  }
 }
