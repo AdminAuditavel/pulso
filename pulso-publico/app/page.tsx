@@ -9,7 +9,7 @@ function Header() {
       <div className={styles.headerInner}>
         <Link href="/" className={styles.brandLink}>
           <Image
-            src="/Comentaram_#07889B.png"
+            src="/Logo_Comentaram_337D26.png.png"
             alt="Comentaram — logotipo"
             width={160}
             height={40}
