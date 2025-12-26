@@ -19,6 +19,7 @@ import InsightsPanel from './InsightsPanel';
 import TopMovers from './TopMovers';
 import ChartPanel from './ChartPanel';
 import RankingTable from './RankingTable';
+import { Line } from 'react-chartjs-2';
 
 import {
   getClubName,
