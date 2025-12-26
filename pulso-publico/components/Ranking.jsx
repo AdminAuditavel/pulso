@@ -362,7 +362,7 @@ export default function Ranking() {
 
   useEffect(() => {
     let cancelled = false;
-
+  
     async function fetchPrevRanking() {
       if (!effectiveDate) {
         setPrevDateUsed('');
@@ -370,7 +370,7 @@ export default function Ranking() {
         setPrevMetricsMap(new Map());
         return;
       }
-
+  
       const p = prevDay(effectiveDate);
       if (!p) {
         setPrevDateUsed('');
@@ -378,19 +378,22 @@ export default function Ranking() {
         setPrevMetricsMap(new Map());
         return;
       }
-
+  
       if (prevFetchCtrlRef.current) {
         try { prevFetchCtrlRef.current.abort(); } catch {}
       }
       const ctrl = new AbortController();
       prevFetchCtrlRef.current = ctrl;
-
+  
       setPrevDateUsed(p);
       setPrevLoading(true);
       setPrevError(null);
-
+  
       try {
-        const res = await fetch(`/api/daily_ranking?date=${encodeURIComponent(p)}`, { signal: ctrl.signal });
+        const res = await fetch(`/api/daily_ranking?date=${encodeURIComponent(p)}`, {
+          signal: ctrl.signal,
+        });
+  
         if (!res.ok) {
           if (!cancelled) {
             setPrevRankMap(new Map());
@@ -398,36 +401,49 @@ export default function Ranking() {
           }
           return;
         }
-
+  
         const json = await res.json();
         const arr = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : [];
-
+  
         const rm = new Map();
         const mm = new Map();
-
+  
         for (let i = 0; i < arr.length; i += 1) {
           const it = arr[i];
-        
+  
           const display = getClubName(it);
           const key = normalizeClubKey(display);
-        
+  
           if (!display || display === '—' || !key) continue;
-        
+  
           const rp = toNumber(it?.rank_position);
           const rankPos = rp !== null ? rp : i + 1;
-        
+  
           const score = pickIapNumber(it);
           const volume = toNumber(it?.volume_total);
           const sent = toNumber(it?.sentiment_score);
-        
-          // IMPORTANT: salva nas 2 chaves (display e normalizada)
+  
+          // rank: duas chaves (display + normalizada)
           rm.set(display, rankPos);
           rm.set(key, rankPos);
-        
-          mm.set(display, { rank: rankPos, score, volume, sent });
-          mm.set(key, { rank: rankPos, score, volume, sent });
+  
+          // metrics: payload compat (score/iap/iap_score/value) + duas chaves
+          const payload = {
+            rank: rankPos,
+  
+            score,
+            iap: score,
+            iap_score: score,
+            value: score,
+  
+            volume,
+            sent,
+          };
+  
+          mm.set(display, payload);
+          mm.set(key, payload);
         }
-
+  
         if (!cancelled) {
           setPrevRankMap(rm);
           setPrevMetricsMap(mm);
@@ -443,9 +459,9 @@ export default function Ranking() {
         prevFetchCtrlRef.current = null;
       }
     }
-
+  
     fetchPrevRanking();
-
+  
     return () => {
       cancelled = true;
       if (prevFetchCtrlRef.current) {
