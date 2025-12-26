@@ -1,4 +1,4 @@
-//pulso-publico/lib/rankingUtils.js
+// pulso-publico/lib/rankingUtils.js
 
 export const NF = new Intl.NumberFormat('pt-BR');
 
@@ -131,9 +131,21 @@ export function formatDateBR(yyyyMMdd) {
   return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
+/* Fallback: busca o último valor não-nulo dentro de item.series (se houver) */
+function lastNonNullFromSeries(it) {
+  if (!it || !Array.isArray(it.series) || it.series.length === 0) return null;
+  for (let i = it.series.length - 1; i >= 0; i -= 1) {
+    const v = it.series[i];
+    const n = toNumber(v?.value ?? v?.iap ?? v?.score ?? null);
+    if (n !== null) return n;
+  }
+  return null;
+}
+
+/* pickIapFromItem: tenta vários campos e, se não encontrar, usa lastNonNullFromSeries */
 function pickIapFromItem(it) {
   // ordem: tenta todos os campos mais prováveis
-  return (
+  const direct =
     toNumber(it?._computed_value) ??
     toNumber(it?.iap_score) ??
     toNumber(it?.score) ??
@@ -142,9 +154,15 @@ function pickIapFromItem(it) {
     // extras comuns em APIs
     toNumber(it?.iap_total) ??
     toNumber(it?.iapScore) ??
-    toNumber(it?.iapValue) ??
-    null
-  );
+    toNumber(it?.iapValue);
+
+  if (direct !== null && direct !== undefined) return direct;
+
+  // fallback: se o item trouxer uma série, pegar o último valor não-nulo
+  const fromSeries = lastNonNullFromSeries(it);
+  if (fromSeries !== null) return fromSeries;
+
+  return null;
 }
 
 export function buildAbSummary(aItems, bItems) {
