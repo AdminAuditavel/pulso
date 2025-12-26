@@ -70,17 +70,24 @@ function clubKeyFromItem(item) {
 }
 
 /* ========= Extração numérica coerente ========= */
-function pickIapNumber(item) {
-  const raw =
-    item?.iap_score ??
-    item?.score ??
-    item?.iap ??
-    item?.value ??
-    item?._computed_value ??
-    null;
-
-  return toNumber(raw);
-}
+  function pickIapNumber(item) {
+    const raw =
+      item?._computed_value ??
+      item?.iap_score ??
+      item?.score ??
+      item?.iap ??
+      item?.value ??
+      // extras comuns em APIs
+      item?.iap_total ??
+      item?.iapScore ??
+      item?.iapValue ??
+      item?.metrics?.iap ??
+      item?.metrics?.iap_score ??
+      item?.metrics?.score ??
+      null;
+  
+    return toNumber(raw);
+  }
 
 /* ========= Força compatibilidade: nome e métricas em campos comuns ========= */
 function withCompatFields(item, computedValueOrNull) {
