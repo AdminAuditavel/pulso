@@ -47,14 +47,12 @@ export default function ChartPanel({
 
         const rankPos = Number(rawItem?.rank_position) || idx + 1;
 
-        // CHAVE ESTÁVEL: club_id primeiro
         const key =
           (rawItem?.club_id ? String(rawItem.club_id) : null) ||
           (r?.__club_key ? String(r.__club_key) : null) ||
           (rawItem?.__club_key ? String(rawItem.__club_key) : null) ||
           normalizeClubKey(club);
 
-        // ---- try prevRankMap first (preferred) ----
         let prevRank = null;
         if (prevRankMap && typeof prevRankMap.get === 'function') {
           const prRaw =
@@ -65,7 +63,6 @@ export default function ChartPanel({
           prevRank = pr !== null ? pr : null;
         }
 
-        // ---- fallback: prevMetricsMap may contain rank in payload ----
         if ((prevRank === null || prevRank === undefined) && prevMetricsMap && typeof prevMetricsMap.get === 'function') {
           const pm =
             prevMetricsMap.get(key) ??
@@ -123,6 +120,9 @@ export default function ChartPanel({
       const dataset = chart.data.datasets[0];
       if (!meta?.data?.length) return;
 
+      // Somente logs em dev
+      const isDev = typeof process !== 'undefined' ? (process.env.NODE_ENV !== 'production') : true;
+
       ctx.save();
       ctx.textBaseline = 'middle';
 
@@ -130,19 +130,43 @@ export default function ChartPanel({
       const valueFont = '800 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
       const trendFont = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
 
-      // Build a map from dataIndex -> bar element (explicit)
+      // Build explicit map dataIndex -> bar element
       const dataIndexToBar = new Map();
       for (let i = 0; i < meta.data.length; i += 1) {
         const bar = meta.data[i];
         const dataIndex = (bar && (bar.index ?? bar.dataIndex ?? bar._index)) ?? i;
-        // prefer first seen for that dataIndex
         if (!dataIndexToBar.has(dataIndex)) dataIndexToBar.set(dataIndex, bar);
       }
 
-      // Iterate over entries in the map (dataIndex -> bar)
+      if (isDev) {
+        try {
+          console.debug('[ChartPanel] clean array:', clean);
+          console.debug('[ChartPanel] chart.data.labels:', chart.data.labels);
+          // print first 30 entries of prevRankMap and prevMetricsMap for inspection (if maps)
+          if (prevRankMap && typeof prevRankMap.entries === 'function') {
+            console.debug('[ChartPanel] prevRankMap sample:', Array.from(prevRankMap.entries()).slice(0, 30));
+          } else {
+            console.debug('[ChartPanel] prevRankMap: not a map or empty');
+          }
+          if (prevMetricsMap && typeof prevMetricsMap.entries === 'function') {
+            console.debug('[ChartPanel] prevMetricsMap sample:', Array.from(prevMetricsMap.entries()).slice(0, 30));
+          } else {
+            console.debug('[ChartPanel] prevMetricsMap: not a map or empty');
+          }
+          console.debug('[ChartPanel] dataIndexToBar keys:', Array.from(dataIndexToBar.keys()));
+        } catch (e) {
+          // ignore logging errors
+        }
+      }
+
       for (const [dataIndex, bar] of dataIndexToBar.entries()) {
-        const row = clean[dataIndex];
-        if (!row) continue;
+        // Garantir integer
+        const idx = Number(dataIndex);
+        const row = clean[idx];
+        if (!row) {
+          if (isDev) console.debug(`[ChartPanel] no row for dataIndex=${dataIndex}`);
+          continue;
+        }
 
         const props =
           typeof bar.getProps === 'function'
@@ -153,7 +177,7 @@ export default function ChartPanel({
         const xStart = props.base; // início da barra
         const yMid = props.y;
 
-        // ===== (B) TEXTO dentro da barra (posição + clube) =====
+        // TEXTO dentro da barra (posição + clube)
         const padIn = 10;
         const innerLeft = Math.max(xStart + padIn, chartArea.left + 4);
         const innerRight = Math.min(xEnd - padIn, chartArea.right - 4);
@@ -164,20 +188,17 @@ export default function ChartPanel({
         ctx.textAlign = 'left';
 
         const insideText = `${row.rankPos}° ${row.club}`;
-
         if (innerWidth > 70) {
           const fullW = ctx.measureText(insideText).width;
           if (fullW <= innerWidth) {
             ctx.fillText(insideText, innerLeft, yMid);
           } else if (innerWidth > 90) {
             const short = `${row.rankPos}° ${String(row.club).slice(0, 12)}…`;
-            if (ctx.measureText(short).width <= innerWidth) {
-              ctx.fillText(short, innerLeft, yMid);
-            }
+            if (ctx.measureText(short).width <= innerWidth) ctx.fillText(short, innerLeft, yMid);
           }
         }
 
-        // ===== (C) VALOR fora da barra (direita): número =====
+        // VALOR fora da barra (direita)
         const padOut = 10;
         const outX = Math.min(xEnd + padOut, chartArea.right - 2);
 
@@ -185,10 +206,10 @@ export default function ChartPanel({
         ctx.fillStyle = 'rgba(0,0,0,0.78)';
         ctx.textAlign = 'left';
 
-        const valueStr = fmt2(dataset.data[dataIndex]);
+        const valueStr = fmt2(dataset.data[idx]);
         ctx.fillText(valueStr, outX, yMid);
 
-        // ===== (D) TENDÊNCIA APÓS O VALOR =====
+        // TENDÊNCIA APÓS O VALOR: desenha se existir rankDelta
         if (prevDateUsed && row.rankDelta !== null && row.rankDelta !== undefined) {
           let trendText = '';
           let trendColor = 'rgba(0,0,0,0.45)';
@@ -211,9 +232,15 @@ export default function ChartPanel({
           ctx.fillStyle = trendColor;
           ctx.textAlign = 'left';
           ctx.fillText(trendText, trendX, yMid);
+
+          if (isDev) {
+            console.debug(`[ChartPanel] drew trend for dataIndex=${dataIndex}`, { club: row.club, valueStr, trendText, idx });
+          }
         } else {
-          // opcional: se quiser mostrar variação por IAP quando rankDelta não existir,
-          // pode calcular aqui usando prevMetricsMap (fallback). No momento deixamos em branco.
+          if (isDev) {
+            // Informe quando não desenhamos por falta de rankDelta
+            console.debug(`[ChartPanel] no rankDelta to draw for dataIndex=${dataIndex}`, { club: row.club, rankDelta: row.rankDelta });
+          }
         }
       }
 
@@ -226,7 +253,6 @@ export default function ChartPanel({
     responsive: true,
     maintainAspectRatio: false,
     layout: {
-      // espaço à direita para o valor + tendência
       padding: { left: 12, right: 120 },
     },
     plugins: {
@@ -243,17 +269,14 @@ export default function ChartPanel({
           label: (ctx) => {
             const idx = ctx.dataIndex;
             const row = clean[idx];
-
             const lines = [];
             lines.push(`IAP: ${fmt2(row.value)}`);
-
             if (prevDateUsed) {
               if (row.rankDelta === null) lines.push(`Movimento vs ${prevDateUsed}: —`);
               else if (row.rankDelta > 0) lines.push(`Movimento vs ${prevDateUsed}: ↑ ${row.rankDelta}`);
               else if (row.rankDelta < 0) lines.push(`Movimento vs ${prevDateUsed}: ↓ ${Math.abs(row.rankDelta)}`);
               else lines.push(`Movimento vs ${prevDateUsed}: 0`);
             }
-
             return lines;
           },
         },
