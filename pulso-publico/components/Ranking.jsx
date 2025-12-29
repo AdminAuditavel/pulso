@@ -871,11 +871,11 @@ export default function Ranking() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginTop: 8 }}>
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.8 }}>Entraram no Top 5 (B)</div>
-                    <div style={{ fontSize: 13 }}>{abSummary.entered?.length ? abSummary.entered.join(', ') : '—'}</div>
+                    <div style={{ fontSize: 13 }}>{abSummary.entered?.length ? abSummary.entered.join(', ') : 'Nenhuma mudança'}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.8 }}>Saíram do Top 5 (A)</div>
-                    <div style={{ fontSize: 13 }}>{abSummary.exited?.length ? abSummary.exited.join(', ') : '—'}</div>
+                    <div style={{ fontSize: 13 }}>{abSummary.exited?.length ? abSummary.exited.join(', ') : 'Nenhuma mudança'}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.8 }}>Maior alta (Δ IAP)</div>
