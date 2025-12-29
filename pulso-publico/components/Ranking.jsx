@@ -799,11 +799,21 @@ export default function Ranking() {
               Top 5 vs Top 5: compara o Top 5 do ranking exibido (Data A) com o Top 5 de uma segunda data (Data B).
             </div>
 
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ fontSize: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ width: 14, height: 12, display: 'inline-block', background: COLOR_A, borderRadius: 2, border: '1px solid rgba(0,0,0,0.06)' }} />
-                <strong>Data A</strong>
-              </div>
+           <div style={{ fontSize: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span
+              style={{
+                width: 14,
+                height: 12,
+                display: 'inline-block',
+                background: COLOR_A,
+                borderRadius: 2,
+                border: '1px solid rgba(0,0,0,0.06)',
+              }}
+            />
+            <strong>
+              Data A {effectiveDate ? formatDateBR(effectiveDate) : '—'}
+            </strong>
+          </div>
 
               <label style={{ fontSize: 12 }}>Data B:</label>
               <input
@@ -868,12 +878,6 @@ export default function Ranking() {
               <div style={{ border: '1px solid rgba(0,0,0,0.04)', borderRadius: 8, padding: 10 }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>
                   Resumo A → B
-                </div>
-                
-                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
-                  Data A: <strong>{formatDateBR(effectiveDate)}</strong>
-                  {' · '}
-                  Data B: <strong>{formatDateBR(compareDateB)}</strong>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginTop: 8 }}>
                   <div>
