@@ -205,7 +205,7 @@ export default function ChartPanel({
     },
   };
 
-  // Tooltip HTML externo (com fundo claro e posição próxima ao ponto)
+  // Tooltip HTML externo (fundo claro, posição clamped)
   const externalTooltip = (context) => {
     const tooltip = context.tooltip;
     const chart = context.chart;
@@ -215,7 +215,6 @@ export default function ChartPanel({
     if (!tooltipEl) {
       tooltipEl = document.createElement('div');
       tooltipEl.className = 'chartjs-custom-tooltip';
-      // estilo base (fundo claro)
       tooltipEl.style.position = 'absolute';
       tooltipEl.style.pointerEvents = 'none';
       tooltipEl.style.transition = 'all .06s ease';
@@ -297,38 +296,46 @@ export default function ChartPanel({
 
     tooltipEl.innerHTML = `${titleHtml}${datesHtml}`;
 
-    // posicionamento: colocamos o tooltip logo acima do caret; se não couber, colocamos abaixo.
+    // posicionamento robusto:
     const canvasRect = chart.canvas.getBoundingClientRect();
     const caretX = tooltip.caretX ?? (canvasRect.width / 2);
     const caretY = tooltip.caretY ?? (canvasRect.height / 2);
 
-    // posição absoluta prevista (na viewport)
     const targetLeft = canvasRect.left + window.scrollX + caretX;
     const targetTop = canvasRect.top + window.scrollY + caretY;
 
-    // força o layout do tooltip para obter offsetHeight/offsetWidth
+    // força cálculo de dimensões
     tooltipEl.style.left = '0px';
     tooltipEl.style.top = '0px';
     tooltipEl.style.opacity = '0';
-    // small delay to ensure dimensions are available (sync should be fine)
-    // compute final position
-    const ttWidth = tooltipEl.offsetWidth || 160;
-    const ttHeight = tooltipEl.offsetHeight || 40;
+    tooltipEl.style.display = 'block';
 
+    const rect = tooltipEl.getBoundingClientRect();
+    const ttWidth = rect.width || 160;
+    const ttHeight = rect.height || 40;
+
+    // centered horizontally
     let left = targetLeft - ttWidth / 2;
-    let top = targetTop - ttHeight - 10; // 10px acima do caret
-
-    // se ficar acima do viewport, posiciona abaixo do caret
-    const minTop = window.scrollY + 8;
-    if (top < minTop) {
-      top = targetTop + 10; // abaixo do caret
-    }
-
-    // limitar left dentro da janela
     const minLeft = window.scrollX + 8;
     const maxLeft = window.scrollX + window.innerWidth - ttWidth - 8;
     if (left < minLeft) left = minLeft;
     if (left > maxLeft) left = maxLeft;
+
+    // prefer above
+    const topAbove = targetTop - ttHeight - 10;
+    const topBelow = targetTop + 10;
+    const minTop = window.scrollY + 8;
+    const maxTop = window.scrollY + window.innerHeight - ttHeight - 8;
+
+    let top;
+    if (topAbove >= minTop) {
+      top = topAbove;
+    } else if (topBelow <= maxTop) {
+      top = topBelow;
+    } else {
+      // neither fully fits; clamp within viewport
+      top = Math.min(Math.max(topAbove, minTop), maxTop);
+    }
 
     tooltipEl.style.left = `${Math.round(left)}px`;
     tooltipEl.style.top = `${Math.round(top)}px`;
