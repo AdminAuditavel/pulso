@@ -5,7 +5,7 @@ import React, { useMemo } from 'react';
 import { Bar } from 'react-chartjs-2';
 import LoadingChartPlaceholder from './LoadingChartPlaceholder';
 import { MANUAL_PALETTE } from '../lib/rankingUtils';
-import ctrlStyles from './controls.module.css'; // para usar o mesmo padrão de card
+import ctrlStyles from './controls.module.css';
 
 function toNumber(x) {
   if (x === null || x === undefined || x === '') return null;
@@ -24,16 +24,10 @@ function fmt2(x) {
   return n.toFixed(2);
 }
 
-/**
- * ChartPanel
- * - agora rende um card no mesmo padrão dos demais (usa controls.module.css topicCard)
- * - ocupa praticamente toda a área visível (altura calculada) para dar destaque ao gráfico
- * - desenha o valor + tendência (↑/↓) à direita da barra, usando dataIndex -> clean mapping
- */
 export default function ChartPanel({
   rows = [],
   loading = false,
-  // altura base (usada apenas como fallback). Quando usado em full-screen card, o CSS controla.
+  // altura base (usada apenas como fallback)
   height = 640,
   topN = 20,
   prevMetricsMap = null,
@@ -61,7 +55,7 @@ export default function ChartPanel({
           (rawItem?.__club_key ? String(rawItem.__club_key) : null) ||
           normalizeClubKey(club);
 
-        // procura prevRank no prevRankMap (preferido)
+        // prevRank via prevRankMap (preferido)
         let prevRank = null;
         if (prevRankMap && typeof prevRankMap.get === 'function') {
           const prRaw =
@@ -72,7 +66,8 @@ export default function ChartPanel({
           prevRank = pr !== null ? pr : null;
         }
 
-        // fallback: prevMetricsMap pode conter rank no payload
+        // fallback: prevMetricsMap pode ter rank e score
+        let prevScore = null;
         if ((prevRank === null || prevRank === undefined) && prevMetricsMap && typeof prevMetricsMap.get === 'function') {
           const pm =
             prevMetricsMap.get(key) ??
@@ -80,11 +75,21 @@ export default function ChartPanel({
             prevMetricsMap.get(normalizeClubKey(club));
           const pr = toNumber(pm?.rank);
           if (pr !== null) prevRank = pr;
+          const ps = toNumber(pm?.score ?? pm?.iap ?? pm?.iap_score ?? pm?.value);
+          prevScore = ps;
+        } else if (prevMetricsMap && typeof prevMetricsMap.get === 'function') {
+          // mesmo que prevRank tenha sido encontrado, tentamos também capturar prevScore caso exista
+          const pm =
+            prevMetricsMap.get(key) ??
+            prevMetricsMap.get(club) ??
+            prevMetricsMap.get(normalizeClubKey(club));
+          const ps = toNumber(pm?.score ?? pm?.iap ?? pm?.iap_score ?? pm?.value);
+          prevScore = ps;
         }
 
         const rankDelta = prevRank !== null ? (prevRank - rankPos) : null;
 
-        return { club, value, rankPos, key, prevRank, rankDelta, rawItem };
+        return { club, value, rankPos, key, prevRank, prevScore, rankDelta, rawItem };
       })
       .filter(Boolean)
       .sort((a, b) => a.rankPos - b.rankPos)
@@ -119,7 +124,7 @@ export default function ChartPanel({
         borderWidth: 0,
         borderRadius: 10,
         barThickness: 18,
-        maxBarThickness: 20,
+        maxBarThickness: 22,
       },
     ],
   };
@@ -161,7 +166,7 @@ export default function ChartPanel({
         const xStart = props.base;
         const yMid = props.y;
 
-        // texto dentro da barra: "pos° clube"
+        // TEXTO DENTRO DA BARRA
         const padIn = 12;
         const innerLeft = Math.max(xStart + padIn, chartArea.left + 6);
         const innerRight = Math.min(xEnd - padIn, chartArea.right - 6);
@@ -183,8 +188,9 @@ export default function ChartPanel({
           }
         }
 
-        // valor fora da barra (direita)
+        // VALOR À DIREITA
         const padOut = 12;
+        // reduzimos padding.right global, então outX ficará mais próximo da borda
         const outX = Math.min(xEnd + padOut, chartArea.right - 8);
 
         ctx.font = valueFont;
@@ -194,27 +200,60 @@ export default function ChartPanel({
         const valueStr = fmt2(dataset.data[idx]);
         ctx.fillText(valueStr, outX, yMid);
 
-        // tendência após o valor (se existir)
-        if (prevDateUsed && row.rankDelta !== null && row.rankDelta !== undefined) {
-          let trendText = '';
-          let trendColor = 'rgba(0,0,0,0.45)';
-          if (row.rankDelta > 0) {
-            trendText = ` ↑ ${row.rankDelta}`;
-            trendColor = '#1b7f3a';
-          } else if (row.rankDelta < 0) {
-            trendText = ` ↓ ${Math.abs(row.rankDelta)}`;
-            trendColor = '#c62828';
-          } else {
-            trendText = ' 0';
-            trendColor = 'rgba(0,0,0,0.55)';
+        // TENTAR DESENHAR TENDÊNCIA:
+        // - prioridade: rankDelta (inteiro de posições)
+        // - fallback: prevScore -> deltaScore = row.value - prevScore (IAP), mostrar com 2 casas
+        let trendText = '';
+        let trendColor = null;
+        let drawTrend = false;
+
+        if (prevDateUsed) {
+          if (row.rankDelta !== null && row.rankDelta !== undefined) {
+            if (row.rankDelta > 0) {
+              trendText = `↑ ${row.rankDelta}`;
+              trendColor = '#1b7f3a';
+            } else if (row.rankDelta < 0) {
+              trendText = `↓ ${Math.abs(row.rankDelta)}`;
+              trendColor = '#c62828';
+            } else {
+              trendText = '0';
+              trendColor = 'rgba(0,0,0,0.55)';
+            }
+            drawTrend = true;
+          } else if (row.prevScore !== null && row.prevScore !== undefined) {
+            const ds = Number((row.value - row.prevScore));
+            if (!Number.isNaN(ds) && ds !== 0) {
+              if (ds > 0) {
+                trendText = `↑ ${ds.toFixed(2)}`;
+                trendColor = '#1b7f3a';
+              } else {
+                trendText = `↓ ${Math.abs(ds).toFixed(2)}`;
+                trendColor = '#c62828';
+              }
+              drawTrend = true;
+            } else if (ds === 0) {
+              trendText = '0';
+              trendColor = 'rgba(0,0,0,0.55)';
+              drawTrend = true;
+            }
+          }
+        }
+
+        if (drawTrend && trendText) {
+          // certifica-se de que o texto caiba no viewport do chart, senão ajusta a posição para a esquerda
+          const valueWidth = ctx.measureText(valueStr).width;
+          const trendWidth = ctx.measureText(trendText).width;
+          const spacing = 10;
+          let trendX = outX + valueWidth + spacing;
+          const maxRight = chartArea.right - 6;
+
+          if (trendX + trendWidth > maxRight) {
+            // se não couber à direita, tenta posicionar logo depois da barra (dentro do limite)
+            trendX = Math.max(outX + valueWidth + 6, maxRight - trendWidth);
           }
 
-          const valueWidth = ctx.measureText(valueStr).width;
-          const spacing = 10;
-          const trendX = outX + valueWidth + spacing;
-
           ctx.font = trendFont;
-          ctx.fillStyle = trendColor;
+          ctx.fillStyle = trendColor || 'rgba(0,0,0,0.45)';
           ctx.textAlign = 'left';
           ctx.fillText(trendText, trendX, yMid);
         }
@@ -229,7 +268,8 @@ export default function ChartPanel({
     responsive: true,
     maintainAspectRatio: false,
     layout: {
-      padding: { left: 12, right: 140 }, // espaço para o valor + tendência
+      // reduzimos padding.right para evitar espaço em branco grande
+      padding: { left: 12, right: 92 },
     },
     plugins: {
       legend: { display: false },
@@ -248,8 +288,19 @@ export default function ChartPanel({
             const lines = [];
             lines.push(`IAP: ${fmt2(row.value)}`);
             if (prevDateUsed) {
-              if (row.rankDelta === null) lines.push(`Movimento vs ${prevDateUsed}: —`);
-              else if (row.rankDelta > 0) lines.push(`Movimento vs ${prevDateUsed}: ↑ ${row.rankDelta}`);
+              if (row.rankDelta === null) {
+                // se não há rankDelta, tentamos prevScore fallback no tooltip também
+                if (row.prevScore !== null && row.prevScore !== undefined) {
+                  const ds = Number((row.value - row.prevScore));
+                  if (!Number.isNaN(ds)) {
+                    lines.push(`Movimento vs ${prevDateUsed}: ${ds > 0 ? `↑ ${ds.toFixed(2)}` : ds < 0 ? `↓ ${Math.abs(ds).toFixed(2)}` : '0'}`);
+                  } else {
+                    lines.push(`Movimento vs ${prevDateUsed}: —`);
+                  }
+                } else {
+                  lines.push(`Movimento vs ${prevDateUsed}: —`);
+                }
+              } else if (row.rankDelta > 0) lines.push(`Movimento vs ${prevDateUsed}: ↑ ${row.rankDelta}`);
               else if (row.rankDelta < 0) lines.push(`Movimento vs ${prevDateUsed}: ↓ ${Math.abs(row.rankDelta)}`);
               else lines.push(`Movimento vs ${prevDateUsed}: 0`);
             }
@@ -272,7 +323,7 @@ export default function ChartPanel({
   };
 
   // altura do card: ocupa quase todo o viewport para dar efeito "full screen card"
-  const cardHeight = `calc(100vh - 140px)`; // ajuste se necessário (header/top offsets)
+  const cardHeight = `calc(100vh - 140px)`; // ajuste se necessário
 
   return (
     <section className={ctrlStyles.topicCard} style={{ height: cardHeight, display: 'flex', flexDirection: 'column', gap: 12 }}>
