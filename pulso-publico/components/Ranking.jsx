@@ -782,7 +782,14 @@ export default function Ranking() {
 
         {/* Chart */}
         <div style={{ marginTop: 12 }}>
-          <ChartPanel rows={rows} loading={rankingLoading} />
+          <ChartPanel
+            rows={rows}
+            loading={rankingLoading}
+            topN={15}
+            height={520}
+            horizontal
+            onBarClick={(club) => setSelectedClub(club)}
+          />
         </div>
 
         {/* Table */}
