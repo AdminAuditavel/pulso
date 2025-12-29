@@ -85,8 +85,8 @@ function clubKeyFromItem(item) {
 
 /* ========= Força compatibilidade: nome e métricas em campos comuns ========= */
 function withCompatFields(item, computedValueOrNull) {
-  const displayName = getClubName(item);
-  const key = normalizeClubKey(displayName);
+  const display = getClubName(it);
+const key = it?.club_id ? String(it.club_id) : normalizeClubKey(display);
 
   const computed =
     computedValueOrNull !== undefined ? computedValueOrNull : pickIapNumber(item);
@@ -446,7 +446,6 @@ export default function Ranking() {
           // metrics: payload compat (score/iap/iap_score/value) + duas chaves
           const payload = {
             rank: rankPos,
-  
             score,
             iap: score,
             iap_score: score,
