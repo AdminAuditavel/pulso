@@ -126,9 +126,9 @@ export default function ChartPanel({
       ctx.save();
       ctx.textBaseline = 'middle';
 
-      const leftFont = '800 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
       const insideFont = '600 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
       const valueFont = '800 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      const trendFont = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
 
       for (let i = 0; i < meta.data.length; i += 1) {
         const bar = meta.data[i];
@@ -136,20 +136,17 @@ export default function ChartPanel({
         // candidates de índices que podem representar o dataIndex real
         const candidateIndices = [];
         if (bar) {
-          // propriedades comuns em diferentes versões/shapes
           candidateIndices.push(bar.index ?? bar.dataIndex ?? bar._index);
         }
-        candidateIndices.push(i); // fallback manual
+        candidateIndices.push(i);
 
         // também tente o índice invertido (Chart.js às vezes inverte ordem)
         const rev = (idx) => (typeof idx === 'number' ? (clean.length - 1 - idx) : null);
         candidateIndices.push(...candidateIndices.map(rev));
 
-        // inclui label e valor vindos do chart para ajudar busca
         const chartLabelAtI = chart.data.labels && chart.data.labels[i];
         const chartValueAtI = dataset.data && dataset.data[i];
 
-        // remove duplicatas e falsy
         const uniqCandidates = Array.from(new Set(candidateIndices.filter((c) => c !== undefined && c !== null && Number.isInteger(c))));
 
         // função para pegar row a partir de um índice candidato
@@ -159,19 +156,16 @@ export default function ChartPanel({
           const c = Number(cand);
           if (c >= 0 && c < clean.length) {
             const candidateRow = clean[c];
-            // se o chartLabel existir, dê preferência a match por nome
             if (chartLabelAtI && candidateRow && candidateRow.club === chartLabelAtI) {
               row = candidateRow;
               usedIndex = c;
               break;
             }
-            // se valor bater e clube também for provável, aceitamos
             if (typeof chartValueAtI !== 'undefined' && candidateRow && Number(candidateRow.value) === Number(chartValueAtI)) {
               row = candidateRow;
               usedIndex = c;
               break;
             }
-            // último recurso: se existe candidateRow use-o (assume mapeamento direto)
             if (candidateRow) {
               row = candidateRow;
               usedIndex = c;
@@ -180,7 +174,6 @@ export default function ChartPanel({
           }
         }
 
-        // Se ainda não achou, tente localizar por labelFromChart usando chart.data.labels[dataIndex]
         if (!row) {
           const dataIndexFromBar = (bar && (bar.index ?? bar.dataIndex ?? bar._index)) ?? i;
           const labelFromChart = chart.data.labels && chart.data.labels[dataIndexFromBar];
@@ -193,12 +186,8 @@ export default function ChartPanel({
           }
         }
 
-        if (!row) {
-          // não encontrou: pula este elemento
-          continue;
-        }
+        if (!row) continue;
 
-        // pega props do bar (compat)
         const props =
           typeof bar.getProps === 'function'
             ? bar.getProps(['x', 'y', 'base', 'width', 'height'], true)
@@ -207,35 +196,6 @@ export default function ChartPanel({
         const xEnd = props.x;      // fim da barra
         const xStart = props.base; // início da barra
         const yMid = props.y;
-
-        // ===== (A) TREND fora do gráfico, à esquerda =====
-        const leftX = chartArea.left - 10;
-        ctx.font = leftFont;
-        ctx.textAlign = 'right';
-
-        let trendText = '—';
-        let trendColor = 'rgba(0,0,0,0.45)';
-
-        if (prevDateUsed) {
-          if (row.rankDelta === null || row.rankDelta === undefined) {
-            // ainda sem rankDelta: deixar traço (poderíamos tentar fallback por IAP aqui)
-            trendText = '—';
-          } else if (row.rankDelta > 0) {
-            trendText = `↑ ${row.rankDelta}`;
-            trendColor = '#1b7f3a'; // verde
-          } else if (row.rankDelta < 0) {
-            trendText = `↓ ${Math.abs(row.rankDelta)}`;
-            trendColor = '#c62828'; // vermelho
-          } else {
-            trendText = '0';
-            trendColor = 'rgba(0,0,0,0.55)';
-          }
-        } else {
-          trendText = '—';
-        }
-
-        ctx.fillStyle = trendColor;
-        ctx.fillText(trendText, leftX, yMid);
 
         // ===== (B) TEXTO dentro da barra (posição + clube) =====
         const padIn = 10;
@@ -250,11 +210,9 @@ export default function ChartPanel({
         const insideText = `${row.rankPos}° ${row.club}`;
 
         if (innerWidth > 70) {
-          let txt = insideText;
-          const fullW = ctx.measureText(txt).width;
-
+          const fullW = ctx.measureText(insideText).width;
           if (fullW <= innerWidth) {
-            ctx.fillText(txt, innerLeft, yMid);
+            ctx.fillText(insideText, innerLeft, yMid);
           } else if (innerWidth > 90) {
             const short = `${row.rankPos}° ${String(row.club).slice(0, 12)}…`;
             if (ctx.measureText(short).width <= innerWidth) {
@@ -270,7 +228,39 @@ export default function ChartPanel({
         ctx.font = valueFont;
         ctx.fillStyle = 'rgba(0,0,0,0.78)';
         ctx.textAlign = 'left';
-        ctx.fillText(fmt2(dataset.data[usedIndex ?? i]), outX, yMid);
+
+        // desenha o valor
+        const displayValueIndex = (usedIndex ?? i);
+        const valueStr = fmt2(dataset.data[displayValueIndex]);
+        ctx.fillText(valueStr, outX, yMid);
+
+        // ===== (D) TENDÊNCIA APÓS O VALOR =====
+        // desenha somente se houver data anterior e rankDelta definido
+        if (prevDateUsed && row.rankDelta !== null && row.rankDelta !== undefined) {
+          // prepara texto e cor
+          let trendText = '';
+          let trendColor = 'rgba(0,0,0,0.45)';
+          if (row.rankDelta > 0) {
+            trendText = `↑ ${row.rankDelta}`;
+            trendColor = '#1b7f3a';
+          } else if (row.rankDelta < 0) {
+            trendText = `↓ ${Math.abs(row.rankDelta)}`;
+            trendColor = '#c62828';
+          } else {
+            trendText = '0';
+            trendColor = 'rgba(0,0,0,0.55)';
+          }
+
+          // posiciona o texto logo após o valor
+          const valueWidth = ctx.measureText(valueStr).width;
+          const spacing = 10;
+          const trendX = outX + valueWidth + spacing;
+
+          ctx.font = trendFont;
+          ctx.fillStyle = trendColor;
+          ctx.textAlign = 'left';
+          ctx.fillText(trendText, trendX, yMid);
+        }
       }
 
       ctx.restore();
@@ -282,8 +272,8 @@ export default function ChartPanel({
     responsive: true,
     maintainAspectRatio: false,
     layout: {
-      // espaço à esquerda para o ↑/↓ e à direita para o valor
-      padding: { left: 44, right: 46 },
+      // espaço à esquerda para eventual conteúdo e à direita para o valor/tendência
+      padding: { left: 12, right: 80 },
     },
     plugins: {
       legend: { display: false },
