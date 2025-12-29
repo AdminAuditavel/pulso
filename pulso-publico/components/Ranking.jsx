@@ -801,9 +801,10 @@ export default function Ranking() {
               Top 5 vs Top 5: compara o Top 5 do ranking exibido (Data A) com o Top 5 de uma segunda data (Data B).
             </div>
         
-            {/* Badges: Data A e Data B com datas ao lado do quadrado */}
-            <div style={{ fontSize: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {/* Linha única: Data A / Data B / seletor / botão */}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              {/* Data A */}
+              <div style={{ fontSize: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span
                   style={{
                     width: 14,
@@ -816,8 +817,9 @@ export default function Ranking() {
                 />
                 <strong>Data A {effectiveDate ? formatDateBR(effectiveDate) : '—'}</strong>
               </div>
-        
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            
+              {/* Data B */}
+              <div style={{ fontSize: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span
                   style={{
                     width: 14,
@@ -830,11 +832,9 @@ export default function Ranking() {
                 />
                 <strong>Data B {compareDateB ? formatDateBR(compareDateB) : '—'}</strong>
               </div>
-            </div>
-        
-            {/* Controles: selecionar Data B + botão */}
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <label style={{ fontSize: 12 }}>Selecionar Data B:</label>
+            
+              {/* Seletor Data B */}
+              <label style={{ fontSize: 12, marginLeft: 6 }}>Selecionar Data B:</label>
               <input
                 type="date"
                 value={compareDateB}
@@ -844,34 +844,35 @@ export default function Ranking() {
                 }}
                 className={ctrlStyles.dateInput}
               />
-        
+            
+              {/* Botão */}
               <button
                 className={btnStyles.btn}
                 onClick={async () => {
                   setTop5BError(null);
                   setTop5BLoading(true);
-        
+            
                   try {
                     if (!compareDateB) throw new Error('Selecione a Data B.');
-        
+            
                     // Normaliza A (tableItems) e B (API) para buildAbSummary enxergar nomes + iap
                     const aItemsRaw = Array.isArray(tableItems) ? tableItems : [];
                     const aItems = aItemsRaw.map((it) => withCompatFields(it, pickIapNumber(it)));
-        
+            
                     const resB = await fetch(`/api/daily_ranking?date=${encodeURIComponent(compareDateB)}`);
                     if (!resB.ok) throw new Error(`Falha ao buscar ranking da Data B (${resB.status})`);
-        
+            
                     const bJson = await resB.json();
                     const bRaw = Array.isArray(bJson) ? bJson : Array.isArray(bJson?.data) ? bJson.data : [];
                     const bItems = bRaw.map((it) => withCompatFields(it, pickIapNumber(it)));
-        
+            
                     setAbSummary(buildAbSummary(aItems.slice(0, 20), bItems.slice(0, 20)));
-        
+            
                     const topA = aItems.map((it) => getClubName(it)).filter((n) => n && n !== '—').slice(0, 5);
                     const topB = bItems.map((it) => getClubName(it)).filter((n) => n && n !== '—').slice(0, 5);
-        
+            
                     const merged = [...topA.map((n) => `${n} (A)`), ...topB.map((n) => `${n} (B)`)];
-        
+            
                     setCompareError(null);
                     setCompareSelected(merged);
                   } catch (e) {
@@ -885,7 +886,7 @@ export default function Ranking() {
               >
                 Carregar Top 5 A + B
               </button>
-        
+            
               {top5BLoading ? <span style={{ fontSize: 12, opacity: 0.75 }}>Carregando…</span> : null}
             </div>
         
