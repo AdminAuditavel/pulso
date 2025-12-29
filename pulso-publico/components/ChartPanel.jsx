@@ -133,13 +133,16 @@ export default function ChartPanel({
       for (let i = 0; i < meta.data.length; i += 1) {
         const bar = meta.data[i];
 
-        // Determina o dataIndex real do elemento (compatível com várias versões/element shapes)
+        // pega dataIndex conforme Chart.js (fallback para i)
         const dataIndex = (bar && (bar.index ?? bar.dataIndex ?? bar._index)) ?? i;
 
-        const row = clean[dataIndex];
+        // garante label conforme chart.data.labels (isso é o que tooltip usa)
+        const labelFromChart = chart.data.labels && chart.data.labels[dataIndex];
+        // encontra o objecto em `clean` que tem o mesmo nome (garante alinhamento)
+        const idxClean = clean.findIndex((c) => c.club === labelFromChart);
+        if (idxClean === -1) continue;
+        const row = clean[idxClean];
         const value = dataset.data[dataIndex];
-
-        if (!row) continue;
 
         const props =
           typeof bar.getProps === 'function'
@@ -151,12 +154,10 @@ export default function ChartPanel({
         const yMid = props.y;
 
         // ===== (A) TREND fora do gráfico, à esquerda =====
-        // Espaço reservado pela padding.left do layout
-        const leftX = chartArea.left - 10; // ancora na borda esquerda do chartArea
+        const leftX = chartArea.left - 10;
         ctx.font = leftFont;
         ctx.textAlign = 'right';
 
-        // texto e cor
         let trendText = '—';
         let trendColor = 'rgba(0,0,0,0.45)';
 
@@ -190,7 +191,6 @@ export default function ChartPanel({
         ctx.fillStyle = '#ffffff';
         ctx.textAlign = 'left';
 
-        // sem ponto após posição
         const insideText = `${row.rankPos}° ${row.club}`;
 
         if (innerWidth > 70) {
@@ -226,7 +226,6 @@ export default function ChartPanel({
     responsive: true,
     maintainAspectRatio: false,
     layout: {
-      // espaço à esquerda para o ↑/↓ e à direita para o valor
       padding: { left: 44, right: 46 },
     },
     plugins: {
