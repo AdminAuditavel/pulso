@@ -154,7 +154,7 @@ export default function ChartPanel({
           trendTxt = '';
         }
 
-        const insideText = `${row.rankPos}° . ${row.club}${trendTxt ? ' ' + trendTxt : ''}`;
+        const insideText = `${row.rankPos}° ${row.club}${trendTxt ? ' ' + trendTxt : ''}`;
 
         // largura disponível dentro da barra
         const innerLeft = Math.max(xStart + padIn, chartArea.left + 4);
@@ -172,7 +172,7 @@ export default function ChartPanel({
           const fullW = ctx.measureText(txt).width;
 
           if (fullW > innerWidth && trendTxt) {
-            txt = `${row.rankPos}° . ${row.club}`; // tira o trend
+            txt = `${row.rankPos}° ${row.club}`; // tira o trend
           }
           const w2 = ctx.measureText(txt).width;
 
@@ -180,7 +180,7 @@ export default function ChartPanel({
             ctx.fillText(txt, innerLeft, yMid);
           } else if (innerWidth > 90) {
             // último recurso: abrevia clube
-            const short = `${row.rankPos}° . ${String(row.club).slice(0, 10)}…`;
+            const short = `${row.rankPos}° ${String(row.club).slice(0, 10)}…`;
             if (ctx.measureText(short).width <= innerWidth) {
               ctx.fillText(short, innerLeft, yMid);
             }
@@ -221,7 +221,7 @@ export default function ChartPanel({
             if (!items?.length) return '';
             const idx = items[0].dataIndex;
             const row = clean[idx];
-            return `${row.rankPos}° • ${row.club}`;
+            return `${row.rankPos}° ${row.club}`;
           },
           label: (ctx) => {
             const idx = ctx.dataIndex;
