@@ -63,7 +63,6 @@ export default function ChartPanel({
           (rawItem?.__club_key ? String(rawItem.__club_key) : null) ||
           normalizeClubKey(club);
 
-        // prevRank via prevRankMap (preferido)
         let prevRank = null;
         if (prevRankMap && typeof prevRankMap.get === 'function') {
           const prRaw =
@@ -74,7 +73,6 @@ export default function ChartPanel({
           prevRank = pr !== null ? pr : null;
         }
 
-        // fallback: prevMetricsMap pode ter rank e score
         let prevScore = null;
         if ((prevRank === null || prevRank === undefined) && prevMetricsMap && typeof prevMetricsMap.get === 'function') {
           const pm =
@@ -136,7 +134,6 @@ export default function ChartPanel({
     ],
   };
 
-  // plugin que desenha labels/valores no canvas (sem tendência)
   const labelsPlugin = {
     id: 'labelsPlugin',
     afterDatasetsDraw(chart) {
@@ -172,7 +169,6 @@ export default function ChartPanel({
         const xStart = props.base;
         const yMid = props.y;
 
-        // TEXTO DENTRO DA BARRA
         const padIn = 12;
         const innerLeft = Math.max(xStart + padIn, chartArea.left + 6);
         const innerRight = Math.min(xEnd - padIn, chartArea.right - 6);
@@ -194,7 +190,6 @@ export default function ChartPanel({
           }
         }
 
-        // VALOR À DIREITA
         const padOut = 12;
         const outX = Math.min(xEnd + padOut, chartArea.right - 8);
 
@@ -210,26 +205,22 @@ export default function ChartPanel({
     },
   };
 
-  // Tooltip externo (HTML) — mostra apenas:
-  // 1) linha título: "1° Chapecoense ↑18" (seta colorida e em negrito)
-  // 2) linha datas: "29-12-2025 vs 28-12-2025"
+  // Tooltip HTML externo (com fundo claro e posição próxima ao ponto)
   const externalTooltip = (context) => {
-    // contexto do tooltip
     const tooltip = context.tooltip;
     const chart = context.chart;
     const parent = chart && chart.canvas ? chart.canvas.parentNode : document.body;
 
-    // cria elemento se não existir
     let tooltipEl = parent.querySelector('.chartjs-custom-tooltip');
     if (!tooltipEl) {
       tooltipEl = document.createElement('div');
       tooltipEl.className = 'chartjs-custom-tooltip';
+      // estilo base (fundo claro)
       tooltipEl.style.position = 'absolute';
       tooltipEl.style.pointerEvents = 'none';
-      tooltipEl.style.transition = 'all .08s ease';
-      tooltipEl.style.transform = 'translate(-50%, -100%)';
-      tooltipEl.style.background = 'rgba(0,0,0,0.85)';
-      tooltipEl.style.color = '#fff';
+      tooltipEl.style.transition = 'all .06s ease';
+      tooltipEl.style.background = 'rgba(255,255,255,0.98)';
+      tooltipEl.style.color = '#111';
       tooltipEl.style.padding = '8px 10px';
       tooltipEl.style.borderRadius = '6px';
       tooltipEl.style.fontFamily = "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial";
@@ -237,17 +228,17 @@ export default function ChartPanel({
       tooltipEl.style.lineHeight = '1.2';
       tooltipEl.style.whiteSpace = 'nowrap';
       tooltipEl.style.zIndex = 9999;
+      tooltipEl.style.border = '1px solid rgba(0,0,0,0.06)';
+      tooltipEl.style.boxShadow = '0 8px 20px rgba(0,0,0,0.08)';
       parent.appendChild(tooltipEl);
     }
 
-    // esconder se tooltip vazio
     if (tooltip.opacity === 0) {
       tooltipEl.style.opacity = '0';
       tooltipEl.style.pointerEvents = 'none';
       return;
     }
 
-    // pega datapoint principal
     const dataPoint = tooltip.dataPoints && tooltip.dataPoints[0];
     if (!dataPoint) {
       tooltipEl.style.opacity = '0';
@@ -256,7 +247,7 @@ export default function ChartPanel({
 
     const dataIndex = dataPoint.dataIndex;
     const row = clean[dataIndex];
-    // texto da seta: prioridade rankDelta, senão fallback por prevScore (IAP diff)
+
     let arrowText = '';
     let arrowColor = '#666';
     if (row) {
@@ -288,11 +279,9 @@ export default function ChartPanel({
       }
     }
 
-    // datas formatadas (dd-mm-YYYY)
     const baseLabel = effectiveDate ? formatDateBRdash(String(effectiveDate).slice(0, 10)) : '';
     const prevLabel = prevDateUsed ? formatDateBRdash(String(prevDateUsed).slice(0, 10)) : '';
 
-    // monta HTML: título em negrito, seta colorida em <strong>
     const titleText = row ? `${row.rankPos}° ${row.club}` : (chart.data.labels && chart.data.labels[dataIndex]) || '';
     const arrowHtml = arrowText ? `<strong style="color: ${arrowColor}; margin-left:8px; font-weight:700;">${arrowText}</strong>` : '';
     const titleHtml = `<div style="font-weight:700; display:flex; gap:8px; align-items:center;">${escapeHtml(titleText)}${arrowHtml}</div>`;
@@ -308,17 +297,45 @@ export default function ChartPanel({
 
     tooltipEl.innerHTML = `${titleHtml}${datesHtml}`;
 
-    // posiciona o tooltip próximo ao ponto (usando caretX/caretY)
+    // posicionamento: colocamos o tooltip logo acima do caret; se não couber, colocamos abaixo.
     const canvasRect = chart.canvas.getBoundingClientRect();
-    const top = canvasRect.top + window.scrollY + tooltip.caretY;
-    const left = canvasRect.left + window.scrollX + tooltip.caretX;
+    const caretX = tooltip.caretX ?? (canvasRect.width / 2);
+    const caretY = tooltip.caretY ?? (canvasRect.height / 2);
 
-    tooltipEl.style.left = `${left}px`;
-    tooltipEl.style.top = `${top}px`;
+    // posição absoluta prevista (na viewport)
+    const targetLeft = canvasRect.left + window.scrollX + caretX;
+    const targetTop = canvasRect.top + window.scrollY + caretY;
+
+    // força o layout do tooltip para obter offsetHeight/offsetWidth
+    tooltipEl.style.left = '0px';
+    tooltipEl.style.top = '0px';
+    tooltipEl.style.opacity = '0';
+    // small delay to ensure dimensions are available (sync should be fine)
+    // compute final position
+    const ttWidth = tooltipEl.offsetWidth || 160;
+    const ttHeight = tooltipEl.offsetHeight || 40;
+
+    let left = targetLeft - ttWidth / 2;
+    let top = targetTop - ttHeight - 10; // 10px acima do caret
+
+    // se ficar acima do viewport, posiciona abaixo do caret
+    const minTop = window.scrollY + 8;
+    if (top < minTop) {
+      top = targetTop + 10; // abaixo do caret
+    }
+
+    // limitar left dentro da janela
+    const minLeft = window.scrollX + 8;
+    const maxLeft = window.scrollX + window.innerWidth - ttWidth - 8;
+    if (left < minLeft) left = minLeft;
+    if (left > maxLeft) left = maxLeft;
+
+    tooltipEl.style.left = `${Math.round(left)}px`;
+    tooltipEl.style.top = `${Math.round(top)}px`;
     tooltipEl.style.opacity = '1';
+    tooltipEl.style.pointerEvents = 'none';
   };
 
-  // helper para escapar HTML (segurança)
   function escapeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -333,26 +350,17 @@ export default function ChartPanel({
     indexAxis: 'y',
     responsive: true,
     maintainAspectRatio: false,
-    layout: {
-      padding: { left: 12, right: 48 },
-    },
+    layout: { padding: { left: 12, right: 48 } },
     plugins: {
       legend: { display: false },
       tooltip: {
-        enabled: false, // desativa tooltip padrão
+        enabled: false,
         external: externalTooltip,
       },
     },
     scales: {
-      y: {
-        ticks: { display: false },
-        grid: { display: false },
-      },
-      x: {
-        beginAtZero: true,
-        grid: { color: 'rgba(0,0,0,0.06)' },
-        ticks: { font: { size: 13 } },
-      },
+      y: { ticks: { display: false }, grid: { display: false } },
+      x: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.06)' }, ticks: { font: { size: 13 } } },
     },
   };
 
@@ -370,7 +378,7 @@ export default function ChartPanel({
         {effectiveDate ? `${formatDateBRdash(effectiveDate)} (base)` : ''}
         {effectiveDate && prevDateUsed ? ' • ' : ''}
         {prevDateUsed ? `${formatDateBRdash(prevDateUsed)} (anterior)` : ''}
-        {(!effectiveDate && !prevDateUsed) ? 'Sem comparação (sem dia anterior).' : '' } Passe o mouse/toque nas barras para detalhes.
+        {(!effectiveDate && !prevDateUsed) ? 'Sem comparação (sem dia anterior).' : ''} Passe o mouse/toque nas barras para detalhes.
       </div>
     </section>
   );
