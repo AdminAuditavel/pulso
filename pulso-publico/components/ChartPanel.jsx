@@ -5,6 +5,7 @@ import React, { useMemo } from 'react';
 import { Bar } from 'react-chartjs-2';
 import LoadingChartPlaceholder from './LoadingChartPlaceholder';
 import { MANUAL_PALETTE } from '../lib/rankingUtils';
+import ctrlStyles from './controls.module.css'; // para usar o mesmo padrão de card
 
 function toNumber(x) {
   if (x === null || x === undefined || x === '') return null;
@@ -23,10 +24,17 @@ function fmt2(x) {
   return n.toFixed(2);
 }
 
+/**
+ * ChartPanel
+ * - agora rende um card no mesmo padrão dos demais (usa controls.module.css topicCard)
+ * - ocupa praticamente toda a área visível (altura calculada) para dar destaque ao gráfico
+ * - desenha o valor + tendência (↑/↓) à direita da barra, usando dataIndex -> clean mapping
+ */
 export default function ChartPanel({
   rows = [],
   loading = false,
-  height = 520,
+  // altura base (usada apenas como fallback). Quando usado em full-screen card, o CSS controla.
+  height = 640,
   topN = 20,
   prevMetricsMap = null,
   prevRankMap = null,
@@ -53,6 +61,7 @@ export default function ChartPanel({
           (rawItem?.__club_key ? String(rawItem.__club_key) : null) ||
           normalizeClubKey(club);
 
+        // procura prevRank no prevRankMap (preferido)
         let prevRank = null;
         if (prevRankMap && typeof prevRankMap.get === 'function') {
           const prRaw =
@@ -63,6 +72,7 @@ export default function ChartPanel({
           prevRank = pr !== null ? pr : null;
         }
 
+        // fallback: prevMetricsMap pode conter rank no payload
         if ((prevRank === null || prevRank === undefined) && prevMetricsMap && typeof prevMetricsMap.get === 'function') {
           const pm =
             prevMetricsMap.get(key) ??
@@ -83,17 +93,19 @@ export default function ChartPanel({
 
   if (loading) {
     return (
-      <div style={{ height, width: '100%' }}>
+      <section className={ctrlStyles.topicCard} style={{ minHeight: height }}>
         <LoadingChartPlaceholder height={height} />
-      </div>
+      </section>
     );
   }
 
   if (clean.length === 0) {
     return (
-      <div style={{ height, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.8 }}>
-        Sem dados para plotar.
-      </div>
+      <section className={ctrlStyles.topicCard} style={{ minHeight: height }}>
+        <div style={{ height, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.8 }}>
+          Sem dados para plotar.
+        </div>
+      </section>
     );
   }
 
@@ -106,8 +118,8 @@ export default function ChartPanel({
         backgroundColor: primary,
         borderWidth: 0,
         borderRadius: 10,
-        barThickness: 16,
-        maxBarThickness: 18,
+        barThickness: 18,
+        maxBarThickness: 20,
       },
     ],
   };
@@ -123,11 +135,11 @@ export default function ChartPanel({
       ctx.save();
       ctx.textBaseline = 'middle';
 
-      const insideFont = '600 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
-      const valueFont = '800 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
-      const trendFont = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      const insideFont = '600 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      const valueFont = '800 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      const trendFont = '700 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
 
-      // Build a map from dataIndex -> bar element (explicit)
+      // mapeia explicitamente dataIndex -> elemento gráfico
       const dataIndexToBar = new Map();
       for (let i = 0; i < meta.data.length; i += 1) {
         const bar = meta.data[i];
@@ -135,9 +147,9 @@ export default function ChartPanel({
         if (!dataIndexToBar.has(dataIndex)) dataIndexToBar.set(dataIndex, bar);
       }
 
-      // Iterate over entries in the map (dataIndex -> bar)
       for (const [dataIndex, bar] of dataIndexToBar.entries()) {
-        const row = clean[dataIndex];
+        const idx = Number(dataIndex);
+        const row = clean[idx];
         if (!row) continue;
 
         const props =
@@ -145,14 +157,14 @@ export default function ChartPanel({
             ? bar.getProps(['x', 'y', 'base', 'width', 'height'], true)
             : bar;
 
-        const xEnd = props.x;      // fim da barra
-        const xStart = props.base; // início da barra
+        const xEnd = props.x;
+        const xStart = props.base;
         const yMid = props.y;
 
-        // ===== (B) TEXTO dentro da barra (posição + clube) =====
-        const padIn = 10;
-        const innerLeft = Math.max(xStart + padIn, chartArea.left + 4);
-        const innerRight = Math.min(xEnd - padIn, chartArea.right - 4);
+        // texto dentro da barra: "pos° clube"
+        const padIn = 12;
+        const innerLeft = Math.max(xStart + padIn, chartArea.left + 6);
+        const innerRight = Math.min(xEnd - padIn, chartArea.right - 6);
         const innerWidth = innerRight - innerLeft;
 
         ctx.font = insideFont;
@@ -166,25 +178,23 @@ export default function ChartPanel({
           if (fullW <= innerWidth) {
             ctx.fillText(insideText, innerLeft, yMid);
           } else if (innerWidth > 90) {
-            const short = `${row.rankPos}° ${String(row.club).slice(0, 12)}…`;
-            if (ctx.measureText(short).width <= innerWidth) {
-              ctx.fillText(short, innerLeft, yMid);
-            }
+            const short = `${row.rankPos}° ${String(row.club).slice(0, 14)}…`;
+            if (ctx.measureText(short).width <= innerWidth) ctx.fillText(short, innerLeft, yMid);
           }
         }
 
-        // ===== (C) VALOR fora da barra (direita): número =====
-        const padOut = 10;
-        const outX = Math.min(xEnd + padOut, chartArea.right - 2);
+        // valor fora da barra (direita)
+        const padOut = 12;
+        const outX = Math.min(xEnd + padOut, chartArea.right - 8);
 
         ctx.font = valueFont;
-        ctx.fillStyle = 'rgba(0,0,0,0.78)';
+        ctx.fillStyle = 'rgba(0,0,0,0.88)';
         ctx.textAlign = 'left';
 
-        const valueStr = fmt2(dataset.data[dataIndex]);
+        const valueStr = fmt2(dataset.data[idx]);
         ctx.fillText(valueStr, outX, yMid);
 
-        // ===== (D) TENDÊNCIA APÓS O VALOR =====
+        // tendência após o valor (se existir)
         if (prevDateUsed && row.rankDelta !== null && row.rankDelta !== undefined) {
           let trendText = '';
           let trendColor = 'rgba(0,0,0,0.45)';
@@ -200,7 +210,7 @@ export default function ChartPanel({
           }
 
           const valueWidth = ctx.measureText(valueStr).width;
-          const spacing = 8;
+          const spacing = 10;
           const trendX = outX + valueWidth + spacing;
 
           ctx.font = trendFont;
@@ -219,8 +229,7 @@ export default function ChartPanel({
     responsive: true,
     maintainAspectRatio: false,
     layout: {
-      // espaço à direita para o valor + tendência
-      padding: { left: 12, right: 120 },
+      padding: { left: 12, right: 140 }, // espaço para o valor + tendência
     },
     plugins: {
       legend: { display: false },
@@ -236,17 +245,14 @@ export default function ChartPanel({
           label: (ctx) => {
             const idx = ctx.dataIndex;
             const row = clean[idx];
-
             const lines = [];
             lines.push(`IAP: ${fmt2(row.value)}`);
-
             if (prevDateUsed) {
               if (row.rankDelta === null) lines.push(`Movimento vs ${prevDateUsed}: —`);
               else if (row.rankDelta > 0) lines.push(`Movimento vs ${prevDateUsed}: ↑ ${row.rankDelta}`);
               else if (row.rankDelta < 0) lines.push(`Movimento vs ${prevDateUsed}: ↓ ${Math.abs(row.rankDelta)}`);
               else lines.push(`Movimento vs ${prevDateUsed}: 0`);
             }
-
             return lines;
           },
         },
@@ -260,19 +266,25 @@ export default function ChartPanel({
       x: {
         beginAtZero: true,
         grid: { color: 'rgba(0,0,0,0.06)' },
-        ticks: { font: { size: 12 } },
+        ticks: { font: { size: 13 } },
       },
     },
   };
 
+  // altura do card: ocupa quase todo o viewport para dar efeito "full screen card"
+  const cardHeight = `calc(100vh - 140px)`; // ajuste se necessário (header/top offsets)
+
   return (
-    // adiciona paddingBottom para garantir espaço visual e evitar sobreposição do próximo card
-    <div style={{ height, width: '100%', paddingBottom: 20 }}>
-      <Bar data={barData} options={barOptions} plugins={[labelsPlugin]} />
-      {/* garante que essa mensagem fique acima de outros elementos visuais */}
-      <div style={{ fontSize: 12, opacity: 0.75, marginTop: 8, position: 'relative', zIndex: 2 }}>
+    <section className={ctrlStyles.topicCard} style={{ height: cardHeight, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ fontSize: 14, fontWeight: 700 }}>Ranking — gráfico amplo</div>
+
+      <div style={{ flex: 1, minHeight: 240 }}>
+        <Bar data={barData} options={barOptions} plugins={[labelsPlugin]} />
+      </div>
+
+      <div style={{ fontSize: 13, opacity: 0.8 }}>
         {prevDateUsed ? `Comparação: vs ${prevDateUsed}.` : 'Sem comparação (sem dia anterior).'} Passe o mouse/toque nas barras para detalhes.
       </div>
-    </div>
+    </section>
   );
 }
